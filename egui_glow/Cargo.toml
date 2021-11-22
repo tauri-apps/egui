@@ -29,8 +29,8 @@ glow = "0.11"
 memoffset = "0.6"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-egui-winit = { version = "0.15.0", path = "../egui-winit", default-features = false, features = ["epi"], optional = true }
-glutin = { version = "0.27.0", optional = true }
+egui-tao = { version = "0.15.0", path = "../egui-tao", default-features = false, features = ["epi"], optional = true }
+glutin = { git = "https://github.com/wusyong/glutin", branch = "tao", version = "0.27.0", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 web-sys = { version = "0.3", features=["console"] }
@@ -40,22 +40,22 @@ wasm-bindgen = { version = "0.2" }
 image = { version = "0.23", default-features = false, features = ["png"] }
 
 [features]
-default = ["clipboard", "default_fonts", "links", "persistence", "winit"]
+default = ["clipboard", "default_fonts", "links", "persistence", "tao"]
 
 # enable cut/copy/paste to OS clipboard.
 # if disabled a clipboard will be simulated so you can still copy/paste within the egui app.
-clipboard = ["egui-winit/clipboard"]
+clipboard = ["egui-tao/clipboard"]
 
 # If set, egui will use `include_bytes!` to bundle some fonts.
 # If you plan on specifying your own fonts you may disable this feature.
 default_fonts = ["egui/default_fonts"]
 
 # enable opening links in a browser when an egui hyperlink is clicked.
-links = ["egui-winit/links"]
+links = ["egui-tao/links"]
 
 # enable code for sabing
 persistence = [
-  "egui-winit/persistence",
+  "egui-tao/persistence",
   "egui/persistence",
   "epi", # also implied by the lines below, see https://github.com/rust-lang/cargo/issues/8832
   "epi/file_storage",
@@ -63,9 +63,9 @@ persistence = [
 ]
 
 # experimental support for a screen reader
-screen_reader = ["egui-winit/screen_reader"]
+screen_reader = ["egui-tao/screen_reader"]
 
-# enable glutin/winit integration.
+# enable glutin/tao integration.
 # if you want to use glow painter on web disable it.
 # if disabled reduce crate size and build time.
-winit = ["egui-winit", "glutin"]
+tao = ["egui-tao", "glutin"]

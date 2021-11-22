@@ -1,6 +1,6 @@
-# Changelog for egui-winit
+# Changelog for egui-tao
 
-All notable changes to the `egui-winit` integration will be noted in this file.
+All notable changes to the `egui-tao` integration will be noted in this file.
 
 
 ## Unreleased

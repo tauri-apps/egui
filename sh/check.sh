@@ -15,7 +15,7 @@ cargo clippy --workspace --all-targets --all-features --  -D warnings -W clippy:
 cargo test --workspace --all-targets --all-features
 cargo fmt --all -- --check
 
-cargo doc -p emath -p epaint -p egui -p eframe -p epi -p egui_web -p egui-winit -p egui_glium -p egui_glow --lib --no-deps --all-features
+cargo doc -p emath -p epaint -p egui -p eframe -p epi -p egui_web -p egui-tao -p egui_glium -p egui_glow --lib --no-deps --all-features
 cargo doc -p egui_web --target wasm32-unknown-unknown --lib --no-deps --all-features
 
 (cd emath && cargo check --no-default-features)
@@ -27,7 +27,7 @@ cargo doc -p egui_web --target wasm32-unknown-unknown --lib --no-deps --all-feat
 (cd eframe && cargo check --no-default-features --features "egui_glow")
 (cd epi && cargo check --no-default-features)
 (cd egui_web && cargo check --no-default-features)
-# (cd egui-winit && cargo check --no-default-features) # we don't pick singlethreaded or multithreaded
+# (cd egui-tao && cargo check --no-default-features) # we don't pick singlethreaded or multithreaded
 (cd egui_glium && cargo check --no-default-features)
 (cd egui_glow && cargo check --no-default-features)
 

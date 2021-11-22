@@ -90,7 +90,7 @@
 pub mod painter;
 pub use glow;
 pub use painter::Painter;
-#[cfg(feature = "winit")]
+#[cfg(feature = "tao")]
 mod epi_backend;
 mod misc_util;
 mod post_process;
@@ -98,23 +98,23 @@ mod shader_version;
 mod vao_emulate;
 
 #[cfg(not(target_arch = "wasm32"))]
-#[cfg(feature = "egui_winit")]
-pub use egui_winit;
+#[cfg(feature = "egui_tao")]
+pub use egui_tao;
 
-#[cfg(all(feature = "epi", feature = "winit"))]
+#[cfg(all(feature = "epi", feature = "tao"))]
 pub use epi_backend::{run, NativeOptions};
 
 // ----------------------------------------------------------------------------
 
 /// Use [`egui`] from a [`glow`] app.
-#[cfg(feature = "winit")]
+#[cfg(feature = "tao")]
 pub struct EguiGlow {
     pub egui_ctx: egui::CtxRef,
-    pub egui_winit: egui_winit::State,
+    pub egui_tao: egui_tao::State,
     pub painter: crate::Painter,
 }
 
-#[cfg(feature = "winit")]
+#[cfg(feature = "tao")]
 impl EguiGlow {
     pub fn new(
         gl_window: &glutin::WindowedContext<glutin::PossiblyCurrent>,
@@ -122,7 +122,7 @@ impl EguiGlow {
     ) -> Self {
         Self {
             egui_ctx: Default::default(),
-            egui_winit: egui_winit::State::new(gl_window.window()),
+            egui_tao: egui_tao::State::new(gl_window.window()),
             painter: crate::Painter::new(gl, None, "")
                 .map_err(|error| {
                     eprintln!("some error occurred in initializing painter\n{}", error);
@@ -138,7 +138,7 @@ impl EguiGlow {
     ///
     /// Note that egui uses `tab` to move focus between elements, so this will always return `true` for tabs.
     pub fn on_event(&mut self, event: &glutin::event::WindowEvent<'_>) -> bool {
-        self.egui_winit.on_event(&self.egui_ctx, event)
+        self.egui_tao.on_event(&self.egui_ctx, event)
     }
 
     /// Returns `needs_repaint` and shapes to draw.
@@ -147,10 +147,10 @@ impl EguiGlow {
         window: &glutin::window::Window,
         run_ui: impl FnMut(&egui::CtxRef),
     ) -> (bool, Vec<egui::epaint::ClippedShape>) {
-        let raw_input = self.egui_winit.take_egui_input(window);
+        let raw_input = self.egui_tao.take_egui_input(window);
         let (egui_output, shapes) = self.egui_ctx.run(raw_input, run_ui);
         let needs_repaint = egui_output.needs_repaint;
-        self.egui_winit
+        self.egui_tao
             .handle_output(window, &self.egui_ctx, egui_output);
         (needs_repaint, shapes)
     }

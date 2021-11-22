@@ -23,7 +23,7 @@ all-features = true
 
 [dependencies]
 egui = { version = "0.15.0", path = "../egui", default-features = false, features = ["single_threaded"] }
-egui-winit = { version = "0.15.0", path = "../egui-winit", default-features = false, features = ["epi"] }
+egui-tao = { version = "0.15.0", path = "../egui-tao", default-features = false, features = ["epi"] }
 epi = { version = "0.15.0", path = "../epi", optional = true }
 
 glium = "0.30"
@@ -36,17 +36,17 @@ default = ["clipboard", "default_fonts", "links", "persistence"]
 
 # enable cut/copy/paste to OS clipboard.
 # if disabled a clipboard will be simulated so you can still copy/paste within the egui app.
-clipboard = ["egui-winit/clipboard"]
+clipboard = ["egui-tao/clipboard"]
 
 # If set, egui will use `include_bytes!` to bundle some fonts.
 # If you plan on specifying your own fonts you may disable this feature.
 default_fonts = ["egui/default_fonts"]
 
 # enable opening links in a browser when an egui hyperlink is clicked.
-links = ["egui-winit/links"]
+links = ["egui-tao/links"]
 
 persistence = [
-  "egui-winit/persistence",
+  "egui-tao/persistence",
   "egui/persistence",
   "epi", # also implied by the lines below, see https://github.com/rust-lang/cargo/issues/8832
   "epi/file_storage",
@@ -54,4 +54,4 @@ persistence = [
 ]
 
 # experimental support for a screen reader
-screen_reader = ["egui-winit/screen_reader"]
+screen_reader = ["egui-tao/screen_reader"]

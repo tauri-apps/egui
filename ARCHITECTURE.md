@@ -5,7 +5,7 @@ Also see [`CONTRIBUTING.md`](https://github.com/emilk/egui/blob/master/CONTRIBUT
 
 
 ## Crate overview
-The crates in this repository are: `egui, emath, epaint, egui, epi, egui-winit, egui_web, egui_glium, egui_glow, egui_demo_lib, egui_demo_app`.
+The crates in this repository are: `egui, emath, epaint, egui, epi, egui-tao, egui_web, egui_glium, egui_glow, egui_demo_lib, egui_demo_app`.
 
 ### `egui`: The main GUI library.
 Example code: `if ui.button("Click me").clicked() { … }`
@@ -25,10 +25,10 @@ Depends on `emath`, [`ab_glyph`](https://crates.io/crates/ab_glyph), [`atomic_re
 Depends only on `egui`.
 Adds a thin application level wrapper around `egui` for hosting an `egui` app inside of `eframe`.
 
-### `egui-winit`
-This crates provides bindings between [`egui`](https://github.com/emilk/egui) and [winit](https://crates.io/crates/winit).
+### `egui-tao`
+This crates provides bindings between [`egui`](https://github.com/emilk/egui) and [tao](https://crates.io/crates/tao).
 
-The library translates winit events to egui, handled copy/paste, updates the cursor, open links clicked in egui, etc.
+The library translates tao events to egui, handled copy/paste, updates the cursor, open links clicked in egui, etc.
 
 ### `egui_web`
 Puts an egui app inside the web browser by compiling to WASM and binding to the web browser with [`js-sys`](https://crates.io/crates/js-sys) and [`wasm-bindgen`](https://crates.io/crates/wasm-bindgen). Paints the triangles that egui outputs using WebGL.

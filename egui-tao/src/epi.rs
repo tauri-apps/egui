@@ -1,10 +1,10 @@
 pub fn window_builder(
     native_options: &epi::NativeOptions,
     window_settings: &Option<crate::WindowSettings>,
-) -> winit::window::WindowBuilder {
+) -> tao::window::WindowBuilder {
     let window_icon = native_options.icon_data.clone().and_then(load_icon);
 
-    let mut window_builder = winit::window::WindowBuilder::new()
+    let mut window_builder = tao::window::WindowBuilder::new()
         .with_always_on_top(native_options.always_on_top)
         .with_maximized(native_options.maximized)
         .with_decorations(native_options.decorated)
@@ -20,7 +20,7 @@ pub fn window_builder(
     if let Some(window_settings) = window_settings {
         window_builder = window_settings.initialize_window(window_builder);
     } else if let Some(initial_size_points) = initial_size_points {
-        window_builder = window_builder.with_inner_size(winit::dpi::LogicalSize {
+        window_builder = window_builder.with_inner_size(tao::dpi::LogicalSize {
             width: initial_size_points.x as f64,
             height: initial_size_points.y as f64,
         });
@@ -29,30 +29,30 @@ pub fn window_builder(
     window_builder
 }
 
-fn load_icon(icon_data: epi::IconData) -> Option<winit::window::Icon> {
-    winit::window::Icon::from_rgba(icon_data.rgba, icon_data.width, icon_data.height).ok()
+fn load_icon(icon_data: epi::IconData) -> Option<tao::window::Icon> {
+    tao::window::Icon::from_rgba(icon_data.rgba, icon_data.width, icon_data.height).ok()
 }
 
 #[cfg(target_os = "windows")]
 fn window_builder_drag_and_drop(
-    window_builder: winit::window::WindowBuilder,
+    window_builder: tao::window::WindowBuilder,
     enable: bool,
-) -> winit::window::WindowBuilder {
-    use winit::platform::windows::WindowBuilderExtWindows as _;
+) -> tao::window::WindowBuilder {
+    use tao::platform::windows::WindowBuilderExtWindows as _;
     window_builder.with_drag_and_drop(enable)
 }
 
 #[cfg(not(target_os = "windows"))]
 fn window_builder_drag_and_drop(
-    window_builder: winit::window::WindowBuilder,
+    window_builder: tao::window::WindowBuilder,
     _enable: bool,
-) -> winit::window::WindowBuilder {
+) -> tao::window::WindowBuilder {
     // drag and drop can only be disabled on windows
     window_builder
 }
 
 pub fn handle_app_output(
-    window: &winit::window::Window,
+    window: &tao::window::Window,
     current_pixels_per_point: f32,
     app_output: epi::backend::AppOutput,
 ) {
@@ -70,7 +70,7 @@ pub fn handle_app_output(
 
     if let Some(window_size) = window_size {
         window.set_inner_size(
-            winit::dpi::PhysicalSize {
+            tao::dpi::PhysicalSize {
                 width: (current_pixels_per_point * window_size.x).round(),
                 height: (current_pixels_per_point * window_size.y).round(),
             }
@@ -145,7 +145,7 @@ impl Persistence {
         &mut self,
         _app: &mut dyn epi::App,
         _egui_ctx: &egui::Context,
-        _window: &winit::window::Window,
+        _window: &tao::window::Window,
     ) {
         #[cfg(feature = "persistence")]
         if let Some(storage) = &mut self.storage {
@@ -172,7 +172,7 @@ impl Persistence {
         &mut self,
         app: &mut dyn epi::App,
         egui_ctx: &egui::Context,
-        window: &winit::window::Window,
+        window: &tao::window::Window,
     ) {
         let now = std::time::Instant::now();
         if now - self.last_auto_save > app.auto_save_interval() {
@@ -184,13 +184,13 @@ impl Persistence {
 
 // ----------------------------------------------------------------------------
 
-/// Everything needed to make a winit-based integration for [`epi`].
+/// Everything needed to make a tao-based integration for [`epi`].
 pub struct EpiIntegration {
     integration_name: &'static str,
     persistence: crate::epi::Persistence,
     repaint_signal: std::sync::Arc<dyn epi::RepaintSignal>,
     pub egui_ctx: egui::CtxRef,
-    egui_winit: crate::State,
+    egui_tao: crate::State,
     pub app: Box<dyn epi::App>,
     latest_frame_time: Option<f32>,
     /// When set, it is time to quit
@@ -200,7 +200,7 @@ pub struct EpiIntegration {
 impl EpiIntegration {
     pub fn new(
         integration_name: &'static str,
-        window: &winit::window::Window,
+        window: &tao::window::Window,
         tex_allocator: &mut dyn epi::TextureAllocator,
         repaint_signal: std::sync::Arc<dyn epi::RepaintSignal>,
         persistence: crate::epi::Persistence,
@@ -215,7 +215,7 @@ impl EpiIntegration {
             persistence,
             repaint_signal,
             egui_ctx,
-            egui_winit: crate::State::new(window),
+            egui_tao: crate::State::new(window),
             app,
             latest_frame_time: None,
             quit: false,
@@ -231,7 +231,7 @@ impl EpiIntegration {
 
     fn setup(
         &mut self,
-        window: &winit::window::Window,
+        window: &tao::window::Window,
         tex_allocator: &mut dyn epi::TextureAllocator,
     ) {
         let mut app_output = epi::backend::AppOutput::default();
@@ -252,7 +252,7 @@ impl EpiIntegration {
 
     fn warm_up(
         &mut self,
-        window: &winit::window::Window,
+        window: &tao::window::Window,
         tex_allocator: &mut dyn epi::TextureAllocator,
     ) {
         let saved_memory = self.egui_ctx.memory().clone();
@@ -267,21 +267,21 @@ impl EpiIntegration {
         self.quit
     }
 
-    pub fn on_event(&mut self, event: &winit::event::WindowEvent<'_>) {
-        use winit::event::WindowEvent;
+    pub fn on_event(&mut self, event: &tao::event::WindowEvent<'_>) {
+        use tao::event::WindowEvent;
         self.quit |= matches!(event, WindowEvent::CloseRequested | WindowEvent::Destroyed);
-        self.egui_winit.on_event(&self.egui_ctx, event);
+        self.egui_tao.on_event(&self.egui_ctx, event);
     }
 
     /// Returns `needs_repaint` and shapes to paint.
     pub fn update(
         &mut self,
-        window: &winit::window::Window,
+        window: &tao::window::Window,
         tex_allocator: &mut dyn epi::TextureAllocator,
     ) -> (bool, Vec<egui::epaint::ClippedShape>) {
         let frame_start = std::time::Instant::now();
 
-        let raw_input = self.egui_winit.take_egui_input(window);
+        let raw_input = self.egui_tao.take_egui_input(window);
 
         let mut app_output = epi::backend::AppOutput::default();
         let mut frame = epi::backend::FrameBuilder {
@@ -298,7 +298,7 @@ impl EpiIntegration {
         });
 
         let needs_repaint = egui_output.needs_repaint;
-        self.egui_winit
+        self.egui_tao
             .handle_output(window, &self.egui_ctx, egui_output);
 
         self.quit |= app_output.quit;
@@ -311,12 +311,12 @@ impl EpiIntegration {
         (needs_repaint, shapes)
     }
 
-    pub fn maybe_autosave(&mut self, window: &winit::window::Window) {
+    pub fn maybe_autosave(&mut self, window: &tao::window::Window) {
         self.persistence
             .maybe_autosave(&mut *self.app, &self.egui_ctx, window);
     }
 
-    pub fn on_exit(&mut self, window: &winit::window::Window) {
+    pub fn on_exit(&mut self, window: &tao::window::Window) {
         self.app.on_exit();
         self.persistence
             .save(&mut *self.app, &self.egui_ctx, window);
@@ -325,7 +325,7 @@ impl EpiIntegration {
 
 fn integration_info(
     integration_name: &'static str,
-    window: &winit::window::Window,
+    window: &tao::window::Window,
     previous_frame_time: Option<f32>,
 ) -> epi::IntegrationInfo {
     epi::IntegrationInfo {

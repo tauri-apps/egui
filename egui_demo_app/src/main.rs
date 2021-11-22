@@ -5,12 +5,18 @@
 
 // When compiling natively:
 fn main() {
-    let app = egui_demo_lib::WrapApp::default();
-    let options = eframe::NativeOptions {
-        // Let's show off that we support transparent windows
-        transparent: true,
-        drag_and_drop_support: true,
-        ..Default::default()
-    };
-    eframe::run_native(Box::new(app), options);
+
+    let t = std::thread::spawn(|| {
+        let app = egui_demo_lib::WrapApp::default();
+        let options = eframe::NativeOptions {
+            // Let's show off that we support transparent windows
+            transparent: true,
+            drag_and_drop_support: true,
+            ..Default::default()
+        };
+        eframe::run_native(Box::new(app), options);
+    });
+
+    t.join();
+
 }

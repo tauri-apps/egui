@@ -204,7 +204,7 @@ pub struct NativeOptions {
     /// On Windows: enable drag and drop support.
     /// Default is `false` to avoid issues with crates such as [`cpal`](https://github.com/RustAudio/cpal) which
     /// will hang when combined with drag-and-drop.
-    /// See <https://github.com/rust-windowing/winit/issues/1255>.
+    /// See <https://github.com/rust-windowing/tao/issues/1255>.
     pub drag_and_drop_support: bool,
 
     /// The application icon, e.g. in the Windows task bar etc.

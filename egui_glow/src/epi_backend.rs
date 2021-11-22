@@ -1,3 +1,4 @@
+use glutin::platform::windows::EventLoopExtWindows;
 use crate::*;
 
 struct RequestRepaintEvent;
@@ -47,11 +48,11 @@ pub use epi::NativeOptions;
 /// Run an egui app
 #[allow(unsafe_code)]
 pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
-    let persistence = egui_winit::epi::Persistence::from_app_name(app.name());
+    let persistence = egui_tao::epi::Persistence::from_app_name(app.name());
     let window_settings = persistence.load_window_settings();
     let window_builder =
-        egui_winit::epi::window_builder(native_options, &window_settings).with_title(app.name());
-    let event_loop = glutin::event_loop::EventLoop::with_user_event();
+        egui_tao::epi::window_builder(native_options, &window_settings).with_title(app.name());
+    let event_loop = glutin::event_loop::EventLoop::new_any_thread();
     let (gl_window, gl) = create_display(window_builder, &event_loop);
 
     let repaint_signal = std::sync::Arc::new(GlowRepaintSignal(std::sync::Mutex::new(
@@ -61,7 +62,7 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
     let mut painter = crate::Painter::new(&gl, None, "")
         .map_err(|error| eprintln!("some OpenGL error occurred {}\n", error))
         .unwrap();
-    let mut integration = egui_winit::epi::EpiIntegration::new(
+    let mut integration = egui_tao::epi::EpiIntegration::new(
         "egui_glow",
         gl_window.window(),
         &mut painter,
@@ -76,7 +77,7 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
         let mut redraw = || {
             if !is_focused {
                 // On Mac, a minimized Window uses up all CPU: https://github.com/emilk/egui/issues/325
-                // We can't know if we are minimized: https://github.com/rust-windowing/winit/issues/208
+                // We can't know if we are minimized: https://github.com/rust-windowing/tao/issues/208
                 // But we know if we are focused (in foreground). When minimized, we are not focused.
                 // However, a user may want an egui with an animation in the background,
                 // so we still need to repaint quite fast.
@@ -120,9 +121,9 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
         };
 
         match event {
-            // Platform-dependent event handlers to workaround a winit bug
-            // See: https://github.com/rust-windowing/winit/issues/987
-            // See: https://github.com/rust-windowing/winit/issues/1619
+            // Platform-dependent event handlers to workaround a tao bug
+            // See: https://github.com/rust-windowing/tao/issues/987
+            // See: https://github.com/rust-windowing/tao/issues/1619
             glutin::event::Event::RedrawEventsCleared if cfg!(windows) => redraw(),
             glutin::event::Event::RedrawRequested(_) if !cfg!(windows) => redraw(),
 

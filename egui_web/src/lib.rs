@@ -1016,7 +1016,7 @@ fn install_canvas_events(runner_ref: &AppRunnerRef) -> Result<(), JsValue> {
                 }
                 web_sys::WheelEvent::DOM_DELTA_LINE => {
                     #[allow(clippy::let_and_return)]
-                    let points_per_scroll_line = 8.0; // Note that this is intentionally different from what we use in egui_glium / winit.
+                    let points_per_scroll_line = 8.0; // Note that this is intentionally different from what we use in egui_glium / tao.
                     points_per_scroll_line
                 }
                 _ => 1.0,

@@ -9,7 +9,7 @@ pub struct WindowSettings {
 }
 
 impl WindowSettings {
-    pub fn from_display(window: &winit::window::Window) -> Self {
+    pub fn from_display(window: &tao::window::Window) -> Self {
         let inner_size_points = window.inner_size().to_logical::<f32>(window.scale_factor());
 
         Self {
@@ -27,8 +27,8 @@ impl WindowSettings {
 
     pub fn initialize_window(
         &self,
-        mut window: winit::window::WindowBuilder,
-    ) -> winit::window::WindowBuilder {
+        mut window: tao::window::WindowBuilder,
+    ) -> tao::window::WindowBuilder {
         if !cfg!(target_os = "windows") {
             // If the app last ran on two monitors and only one is now connected, then
             // the given position is invalid.
@@ -36,7 +36,7 @@ impl WindowSettings {
             // If this happens on Windows, the window is hidden and very difficult to find.
             // So we don't restore window positions on Windows.
             if let Some(pos) = self.inner_pos {
-                window = window.with_position(winit::dpi::PhysicalPosition {
+                window = window.with_position(tao::dpi::PhysicalPosition {
                     x: pos.x as f64,
                     y: pos.y as f64,
                 });
@@ -44,7 +44,7 @@ impl WindowSettings {
         }
 
         if let Some(inner_size_points) = self.inner_size_points {
-            window.with_inner_size(winit::dpi::LogicalSize {
+            window.with_inner_size(tao::dpi::LogicalSize {
                 width: inner_size_points.x as f64,
                 height: inner_size_points.y as f64,
             })

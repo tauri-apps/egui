@@ -169,7 +169,7 @@ There are three official egui integrations made for apps:
 * [`egui_web`](https://github.com/emilk/egui/tree/master/egui_web) for making a web app. Compiles to WASM, renders with WebGL. [Click to run the egui demo](https://emilk.github.io/egui/index.html).
 * [`egui_glium`](https://github.com/emilk/egui/tree/master/egui_glium) for compiling native apps with [Glium](https://github.com/glium/glium).
 * [`egui_glow`](https://github.com/emilk/egui/tree/master/egui_glow) for compiling native apps with [Glow](https://github.com/grovesNL/glow).
-* [`egui-winit`](https://github.com/emilk/egui/tree/master/egui-winit) for integrating with [`winit`](https://github.com/rust-windowing/winit). `egui-winit` is used by `egui_glium` and `egui_glow`.
+* [`egui-tao`](https://github.com/emilk/egui/tree/master/egui-tao) for integrating with [`tao`](https://github.com/rust-windowing/tao). `egui-tao` is used by `egui_glium` and `egui_glow`.
 
 If you making an app, consider using [`eframe`](https://github.com/emilk/egui/tree/master/eframe), a framework which allows you to write code that works on both the web (`egui_web`) and native (using `egui_glium`).
 
@@ -182,8 +182,8 @@ If you making an app, consider using [`eframe`](https://github.com/emilk/egui/tr
 * [`egui-macroquad`](https://github.com/optozorax/egui-macroquad) for [macroquad](https://github.com/not-fl3/macroquad).
 * [`egui_sdl2_gl`](https://crates.io/crates/egui_sdl2_gl) for [SDL2](https://crates.io/crates/sdl2).
 * [`egui_vulkano`](https://github.com/derivator/egui_vulkano) for [Vulkano](https://github.com/vulkano-rs/vulkano).
-* [`egui-winit-ash-integration`](https://github.com/MatchaChoco010/egui-winit-ash-integration) for [winit](https://github.com/rust-windowing/winit) and [ash](https://github.com/MaikKlein/ash).
-* [`egui_winit_vulkano`](https://github.com/hakolao/egui_winit_vulkano) for [Vulkano](https://github.com/vulkano-rs/vulkano).
+* [`egui-tao-ash-integration`](https://github.com/MatchaChoco010/egui-tao-ash-integration) for [tao](https://github.com/rust-windowing/tao) and [ash](https://github.com/MaikKlein/ash).
+* [`egui_tao_vulkano`](https://github.com/hakolao/egui_tao_vulkano) for [Vulkano](https://github.com/vulkano-rs/vulkano).
 * [`fltk-egui`](https://crates.io/crates/fltk-egui) for [fltk-rs](https://github.com/fltk-rs/fltk-rs).
 * [`ggez-egui`](https://github.com/NemuiSen/ggez-egui) for the [ggez](https://ggez.rs/) game framework.
 * [`godot-egui`](https://github.com/setzer22/godot-egui) for [`godot-rust`](https://github.com/godot-rust/godot-rust).

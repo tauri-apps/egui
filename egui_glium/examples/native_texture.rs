@@ -104,9 +104,9 @@ fn main() {
         };
 
         match event {
-            // Platform-dependent event handlers to workaround a winit bug
-            // See: https://github.com/rust-windowing/winit/issues/987
-            // See: https://github.com/rust-windowing/winit/issues/1619
+            // Platform-dependent event handlers to workaround a tao bug
+            // See: https://github.com/rust-windowing/tao/issues/987
+            // See: https://github.com/rust-windowing/tao/issues/1619
             glutin::event::Event::RedrawEventsCleared if cfg!(windows) => redraw(),
             glutin::event::Event::RedrawRequested(_) if !cfg!(windows) => redraw(),
 

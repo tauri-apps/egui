@@ -95,14 +95,14 @@ mod epi_backend;
 #[cfg(feature = "epi")]
 pub use epi_backend::{run, NativeOptions};
 
-pub use egui_winit;
+pub use egui_tao;
 
 // ----------------------------------------------------------------------------
 
 /// Convenience wrapper for using [`egui`] from a [`glium`] app.
 pub struct EguiGlium {
     pub egui_ctx: egui::CtxRef,
-    pub egui_winit: egui_winit::State,
+    pub egui_tao: egui_tao::State,
     pub painter: crate::Painter,
 }
 
@@ -110,7 +110,7 @@ impl EguiGlium {
     pub fn new(display: &glium::Display) -> Self {
         Self {
             egui_ctx: Default::default(),
-            egui_winit: egui_winit::State::new(display.gl_window().window()),
+            egui_tao: egui_tao::State::new(display.gl_window().window()),
             painter: crate::Painter::new(display),
         }
     }
@@ -122,7 +122,7 @@ impl EguiGlium {
     ///
     /// Note that egui uses `tab` to move focus between elements, so this will always return `true` for tabs.
     pub fn on_event(&mut self, event: &glium::glutin::event::WindowEvent<'_>) -> bool {
-        self.egui_winit.on_event(&self.egui_ctx, event)
+        self.egui_tao.on_event(&self.egui_ctx, event)
     }
 
     /// Returns `needs_repaint` and shapes to draw.
@@ -132,11 +132,11 @@ impl EguiGlium {
         run_ui: impl FnMut(&egui::CtxRef),
     ) -> (bool, Vec<egui::epaint::ClippedShape>) {
         let raw_input = self
-            .egui_winit
+            .egui_tao
             .take_egui_input(display.gl_window().window());
         let (egui_output, shapes) = self.egui_ctx.run(raw_input, run_ui);
         let needs_repaint = egui_output.needs_repaint;
-        self.egui_winit
+        self.egui_tao
             .handle_output(display.gl_window().window(), &self.egui_ctx, egui_output);
         (needs_repaint, shapes)
     }
