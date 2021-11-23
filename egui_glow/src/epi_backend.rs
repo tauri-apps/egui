@@ -1,4 +1,4 @@
-use glutin::platform::windows::EventLoopExtWindows;
+//use glutin::platform::windows::EventLoopExtWindows;
 use crate::*;
 
 struct RequestRepaintEvent;
@@ -52,7 +52,7 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
     let window_settings = persistence.load_window_settings();
     let window_builder =
         egui_tao::epi::window_builder(native_options, &window_settings).with_title(app.name());
-    let event_loop = glutin::event_loop::EventLoop::new_any_thread();
+    let event_loop = glutin::event_loop::EventLoop::with_user_event();
     let (gl_window, gl) = create_display(window_builder, &event_loop);
 
     let repaint_signal = std::sync::Arc::new(GlowRepaintSignal(std::sync::Mutex::new(
@@ -124,7 +124,7 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
             // Platform-dependent event handlers to workaround a tao bug
             // See: https://github.com/rust-windowing/tao/issues/987
             // See: https://github.com/rust-windowing/tao/issues/1619
-            glutin::event::Event::RedrawEventsCleared if cfg!(windows) => redraw(),
+            glutin::event::Event::MainEventsCleared if cfg!(windows) => redraw(),
             glutin::event::Event::RedrawRequested(_) if !cfg!(windows) => redraw(),
 
             glutin::event::Event::WindowEvent { event, .. } => {
