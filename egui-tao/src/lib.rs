@@ -245,21 +245,20 @@ impl State {
                     _ => false,
                 }
             }
-            WindowEvent::ReceivedImeText(_ch) => { // TODO egui doesn't support all unicode yet
-                false
-                // // On Mac we get here when the user presses Cmd-C (copy), ctrl-W, etc.
-                // // We need to ignore these characters that are side-effects of commands.
-                // let is_mac_cmd = cfg!(target_os = "macos")
-                //     && (self.egui_input.modifiers.ctrl || self.egui_input.modifiers.mac_cmd);
-                //
-                // if is_printable_char(*ch) && !is_mac_cmd {
-                //     self.egui_input
-                //         .events
-                //         .push(egui::Event::Text(ch.to_string()));
-                //     egui_ctx.wants_keyboard_input()
-                // } else {
-                //     false
-                // }
+            WindowEvent::ReceivedImeText(ch) => {
+                // On Mac we get here when the user presses Cmd-C (copy), ctrl-W, etc.
+                // We need to ignore these characters that are side-effects of commands.
+                let is_mac_cmd = cfg!(target_os = "macos")
+                    && (self.egui_input.modifiers.ctrl || self.egui_input.modifiers.mac_cmd);
+
+                if ch.chars().all(|ch| is_printable_char(ch)) && !is_mac_cmd {
+                    self.egui_input
+                        .events
+                        .push(egui::Event::Text(ch.to_string()));
+                    egui_ctx.wants_keyboard_input()
+                } else {
+                    false
+                }
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 self.on_keyboard_input(event);
@@ -475,16 +474,14 @@ impl State {
     }
 
     fn on_keyboard_input(&mut self, input: &tao::event::KeyEvent) {
-        dbg!(&input);
-        // TODO fix this
         let pressed = input.state == tao::event::ElementState::Pressed;
 
         if pressed {
-            if input.logical_key == tao::keyboard::Key::Cut {
+            if is_cut_command(self.egui_input.modifiers, input.physical_key) {
                 self.egui_input.events.push(egui::Event::Cut);
-            } else if input.logical_key == tao::keyboard::Key::Copy {
+            } else if is_copy_command(self.egui_input.modifiers, input.physical_key) {
                 self.egui_input.events.push(egui::Event::Copy);
-            } else if input.logical_key == tao::keyboard::Key::Paste {
+            } else if is_paste_command(self.egui_input.modifiers, input.physical_key) {
                 if let Some(contents) = self.clipboard.get() {
                     self.egui_input
                         .events
@@ -499,16 +496,6 @@ impl State {
                 pressed,
                 modifiers: self.egui_input.modifiers,
             });
-        }
-
-        if let Some(text) = input.text {
-            if let Some(ch) = text.chars().next() {
-                if is_printable_char(ch) {
-                    self.egui_input
-                        .events
-                        .push(egui::Event::Text(ch.to_string()));
-                }
-            }
         }
     }
 
@@ -589,6 +576,27 @@ fn is_printable_char(chr: char) -> bool {
         || '\u{100000}' <= chr && chr <= '\u{10fffd}';
 
     !is_in_private_use_area && !chr.is_ascii_control()
+}
+
+fn is_cut_command(modifiers: egui::Modifiers, keycode: tao::keyboard::KeyCode) -> bool {
+    (modifiers.command && keycode == tao::keyboard::KeyCode::KeyX)
+        || (cfg!(target_os = "windows")
+        && modifiers.shift
+        && keycode == tao::keyboard::KeyCode::Delete)
+}
+
+fn is_copy_command(modifiers: egui::Modifiers, keycode: tao::keyboard::KeyCode) -> bool {
+    (modifiers.command && keycode == tao::keyboard::KeyCode::KeyC)
+        || (cfg!(target_os = "windows")
+        && modifiers.ctrl
+        && keycode == tao::keyboard::KeyCode::Insert)
+}
+
+fn is_paste_command(modifiers: egui::Modifiers, keycode: tao::keyboard::KeyCode) -> bool {
+    (modifiers.command && keycode == tao::keyboard::KeyCode::KeyV)
+        || (cfg!(target_os = "windows")
+        && modifiers.shift
+        && keycode == tao::keyboard::KeyCode::Insert)
 }
 
 fn translate_mouse_button(button: tao::event::MouseButton) -> Option<egui::PointerButton> {
