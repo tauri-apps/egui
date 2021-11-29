@@ -1222,6 +1222,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "gl_loader"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e32d96dd5f881490e537041d5532320812ba096097f07fccb4626578da0b99d3"
+dependencies = [
+ "cc",
+ "libc",
+]
+
+[[package]]
 name = "glib"
 version = "0.14.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1286,13 +1296,14 @@ dependencies = [
 [[package]]
 name = "glutin"
 version = "0.27.0"
-source = "git+https://github.com/wusyong/glutin?branch=tao#94be3ece3247bcc72e932b631796844d9b342dc8"
+source = "git+https://github.com/wusyong/glutin?branch=tao#7b95cbf51f80e98728736ac0dafb0e9426fcf7da"
 dependencies = [
  "android_glue",
  "cgl",
  "cocoa",
  "core-foundation 0.9.2",
  "gdkx11",
+ "gl_loader",
  "glib",
  "glutin_egl_sys",
  "glutin_emscripten_sys",
@@ -1313,7 +1324,7 @@ dependencies = [
 [[package]]
 name = "glutin_egl_sys"
 version = "0.1.5"
-source = "git+https://github.com/wusyong/glutin?branch=tao#94be3ece3247bcc72e932b631796844d9b342dc8"
+source = "git+https://github.com/wusyong/glutin?branch=tao#7b95cbf51f80e98728736ac0dafb0e9426fcf7da"
 dependencies = [
  "gl_generator",
  "winapi",
@@ -1322,12 +1333,12 @@ dependencies = [
 [[package]]
 name = "glutin_emscripten_sys"
 version = "0.1.1"
-source = "git+https://github.com/wusyong/glutin?branch=tao#94be3ece3247bcc72e932b631796844d9b342dc8"
+source = "git+https://github.com/wusyong/glutin?branch=tao#7b95cbf51f80e98728736ac0dafb0e9426fcf7da"
 
 [[package]]
 name = "glutin_gles2_sys"
 version = "0.1.5"
-source = "git+https://github.com/wusyong/glutin?branch=tao#94be3ece3247bcc72e932b631796844d9b342dc8"
+source = "git+https://github.com/wusyong/glutin?branch=tao#7b95cbf51f80e98728736ac0dafb0e9426fcf7da"
 dependencies = [
  "gl_generator",
  "objc",
@@ -1336,7 +1347,7 @@ dependencies = [
 [[package]]
 name = "glutin_glx_sys"
 version = "0.1.7"
-source = "git+https://github.com/wusyong/glutin?branch=tao#94be3ece3247bcc72e932b631796844d9b342dc8"
+source = "git+https://github.com/wusyong/glutin?branch=tao#7b95cbf51f80e98728736ac0dafb0e9426fcf7da"
 dependencies = [
  "gl_generator",
  "x11-dl",
@@ -1345,7 +1356,7 @@ dependencies = [
 [[package]]
 name = "glutin_wgl_sys"
 version = "0.1.5"
-source = "git+https://github.com/wusyong/glutin?branch=tao#94be3ece3247bcc72e932b631796844d9b342dc8"
+source = "git+https://github.com/wusyong/glutin?branch=tao#7b95cbf51f80e98728736ac0dafb0e9426fcf7da"
 dependencies = [
  "gl_generator",
 ]
@@ -2629,7 +2640,7 @@ dependencies = [
 [[package]]
 name = "tao"
 version = "0.5.2"
-source = "git+https://github.com/tauri-apps/tao?branch=x11#db29d135ed01a061d6c0049391defa68fe288625"
+source = "git+https://github.com/tauri-apps/tao?branch=text#a4d0ca928eb5478cde64e237f039718e5c9892c5"
 dependencies = [
  "bitflags",
  "cairo-rs",
