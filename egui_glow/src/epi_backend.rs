@@ -1,6 +1,9 @@
 //use glutin::platform::windows::EventLoopExtWindows;
 use crate::*;
+use glutin::platform::*;
+use gtk::prelude::*;
 
+#[derive(Debug)]
 struct RequestRepaintEvent;
 
 struct GlowRepaintSignal(std::sync::Mutex<glutin::event_loop::EventLoopProxy<RequestRepaintEvent>>);
@@ -54,6 +57,7 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
         egui_tao::epi::window_builder(native_options, &window_settings).with_title(app.name());
     let event_loop = glutin::event_loop::EventLoop::with_user_event();
     let (gl_window, gl) = create_display(window_builder, &event_loop);
+    let area = unsafe { gl_window.raw_handle() };
 
     let repaint_signal = std::sync::Arc::new(GlowRepaintSignal(std::sync::Mutex::new(
         event_loop.create_proxy(),
@@ -73,6 +77,10 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
 
     let mut is_focused = true;
 
+    area.connect_render(|_, _| {
+        gtk::Inhibit(false)
+    });
+
     event_loop.run(move |event, _, control_flow| {
         let mut redraw = || {
             if !is_focused {
@@ -83,6 +91,8 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
                 // so we still need to repaint quite fast.
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
+
+            area.make_current();
 
             let (needs_repaint, shapes) = integration.update(gl_window.window(), &mut painter);
             let clipped_meshes = integration.egui_ctx.tessellate(shapes);
@@ -110,7 +120,8 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
                 *control_flow = if integration.should_quit() {
                     glutin::event_loop::ControlFlow::Exit
                 } else if needs_repaint {
-                    gl_window.window().request_redraw();
+                    area.queue_render();
+                    //gl_window.window().request_redraw();
                     glutin::event_loop::ControlFlow::Poll
                 } else {
                     glutin::event_loop::ControlFlow::Wait
@@ -124,7 +135,7 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
             // Platform-dependent event handlers to workaround a tao bug
             // See: https://github.com/rust-windowing/tao/issues/987
             // See: https://github.com/rust-windowing/tao/issues/1619
-            glutin::event::Event::MainEventsCleared if cfg!(windows) => redraw(),
+            glutin::event::Event::MainEventsCleared if !cfg!(windows) => redraw(),
             glutin::event::Event::RedrawRequested(_) if !cfg!(windows) => redraw(),
 
             glutin::event::Event::WindowEvent { event, .. } => {
@@ -141,14 +152,16 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
                     *control_flow = glutin::event_loop::ControlFlow::Exit;
                 }
 
-                gl_window.window().request_redraw(); // TODO: ask egui if the events warrants a repaint instead
+                //area.queue_render();
+                //gl_window.window().request_redraw(); // TODO: ask egui if the events warrants a repaint instead
             }
             glutin::event::Event::LoopDestroyed => {
                 integration.on_exit(gl_window.window());
                 painter.destroy(&gl);
             }
             glutin::event::Event::UserEvent(RequestRepaintEvent) => {
-                gl_window.window().request_redraw();
+                //area.queue_render();
+                //gl_window.window().request_redraw();
             }
             _ => (),
         }
