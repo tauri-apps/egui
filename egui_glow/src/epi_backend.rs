@@ -47,6 +47,10 @@ fn create_display(
 // ----------------------------------------------------------------------------
 
 pub use epi::NativeOptions;
+use std::rc::Rc;
+use std::cell::RefCell;
+use std::ops::DerefMut;
+use std::sync::mpsc::sync_channel;
 
 /// Run an egui app
 #[allow(unsafe_code)]
@@ -66,102 +70,83 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
     let mut painter = crate::Painter::new(&gl, None, "")
         .map_err(|error| eprintln!("some OpenGL error occurred {}\n", error))
         .unwrap();
-    let mut integration = egui_tao::epi::EpiIntegration::new(
+    let integration = Rc::new(RefCell::new(egui_tao::epi::EpiIntegration::new(
         "egui_glow",
         gl_window.window(),
         &mut painter,
         repaint_signal,
         persistence,
         app,
-    );
+    )));
 
-    let mut is_focused = true;
+    let painter = Rc::new(RefCell::new(painter));
+    let (tx, rx) = sync_channel(1);
+    let i = integration.clone();
+    let p = painter.clone();
+    area.connect_render(move |_, _| {
+        let mut integration = i.borrow_mut();
+        let mut painter = p.borrow_mut();
+        let (needs_repaint, shapes) = integration.update(gl_window.window(), painter.deref_mut());
+        let clipped_meshes = integration.egui_ctx.tessellate(shapes);
 
-    area.connect_render(|_, _| {
+        {
+            let color = integration.app.clear_color();
+            unsafe {
+                use glow::HasContext as _;
+                gl.disable(glow::SCISSOR_TEST);
+                gl.clear_color(color[0], color[1], color[2], color[3]);
+                gl.clear(glow::COLOR_BUFFER_BIT);
+            }
+            painter.upload_egui_texture(&gl, &integration.egui_ctx.texture());
+            painter.paint_meshes(
+                gl_window.window().inner_size().into(),
+                &gl,
+                integration.egui_ctx.pixels_per_point(),
+                clipped_meshes,
+            );
+
+        }
+
+        {
+            let control_flow = if integration.should_quit() {
+                glutin::event_loop::ControlFlow::Exit
+            } else if needs_repaint {
+                glutin::event_loop::ControlFlow::Poll
+            } else {
+                glutin::event_loop::ControlFlow::Wait
+            };
+            tx.send(control_flow).unwrap();
+        }
+
+        integration.maybe_autosave(gl_window.window());
         gtk::Inhibit(false)
     });
 
     event_loop.run(move |event, _, control_flow| {
-        let mut redraw = || {
-            if !is_focused {
-                // On Mac, a minimized Window uses up all CPU: https://github.com/emilk/egui/issues/325
-                // We can't know if we are minimized: https://github.com/rust-windowing/tao/issues/208
-                // But we know if we are focused (in foreground). When minimized, we are not focused.
-                // However, a user may want an egui with an animation in the background,
-                // so we still need to repaint quite fast.
-                std::thread::sleep(std::time::Duration::from_millis(10));
-            }
-
-            area.make_current();
-
-            let (needs_repaint, shapes) = integration.update(gl_window.window(), &mut painter);
-            let clipped_meshes = integration.egui_ctx.tessellate(shapes);
-
-            {
-                let color = integration.app.clear_color();
-                unsafe {
-                    use glow::HasContext as _;
-                    gl.disable(glow::SCISSOR_TEST);
-                    gl.clear_color(color[0], color[1], color[2], color[3]);
-                    gl.clear(glow::COLOR_BUFFER_BIT);
-                }
-                painter.upload_egui_texture(&gl, &integration.egui_ctx.texture());
-                painter.paint_meshes(
-                    gl_window.window().inner_size().into(),
-                    &gl,
-                    integration.egui_ctx.pixels_per_point(),
-                    clipped_meshes,
-                );
-
-                gl_window.swap_buffers().unwrap();
-            }
-
-            {
-                *control_flow = if integration.should_quit() {
-                    glutin::event_loop::ControlFlow::Exit
-                } else if needs_repaint {
-                    area.queue_render();
-                    //gl_window.window().request_redraw();
-                    glutin::event_loop::ControlFlow::Poll
-                } else {
-                    glutin::event_loop::ControlFlow::Wait
-                };
-            }
-
-            integration.maybe_autosave(gl_window.window());
-        };
-
+        let mut integration = integration.borrow_mut();
+        let painter = painter.borrow_mut();
+        //dbg!(&event);
         match event {
-            // Platform-dependent event handlers to workaround a tao bug
-            // See: https://github.com/rust-windowing/tao/issues/987
-            // See: https://github.com/rust-windowing/tao/issues/1619
-            glutin::event::Event::MainEventsCleared if !cfg!(windows) => redraw(),
-            glutin::event::Event::RedrawRequested(_) if !cfg!(windows) => redraw(),
-
+            glutin::event::Event::MainEventsCleared => {
+                area.queue_render();
+                while let Ok(c) = rx.try_recv() {
+                    *control_flow = c;
+                }
+            },
             glutin::event::Event::WindowEvent { event, .. } => {
-                if let glutin::event::WindowEvent::Focused(new_focused) = event {
-                    is_focused = new_focused;
-                }
-
-                if let glutin::event::WindowEvent::Resized(physical_size) = event {
-                    gl_window.resize(physical_size);
-                }
-
+                //area.queue_render();
                 integration.on_event(&event);
                 if integration.should_quit() {
                     *control_flow = glutin::event_loop::ControlFlow::Exit;
                 }
-
-                //area.queue_render();
-                //gl_window.window().request_redraw(); // TODO: ask egui if the events warrants a repaint instead
             }
             glutin::event::Event::LoopDestroyed => {
-                integration.on_exit(gl_window.window());
-                painter.destroy(&gl);
+                // TODO
+                //integration.on_exit(gl_window.window());
+                //painter.destroy(&gl);
             }
             glutin::event::Event::UserEvent(RequestRepaintEvent) => {
-                //area.queue_render();
-                //gl_window.window().request_redraw();
+                area.queue_render();
             }
             _ => (),
         }
