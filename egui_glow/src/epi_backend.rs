@@ -50,7 +50,7 @@ pub use epi::NativeOptions;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::ops::DerefMut;
-use std::sync::mpsc::sync_channel;
+use std::sync::atomic::{AtomicU8, Ordering};
 
 /// Run an egui app
 #[allow(unsafe_code)]
@@ -80,9 +80,11 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
     )));
 
     let painter = Rc::new(RefCell::new(painter));
-    let (tx, rx) = sync_channel(1);
+    let render_flow = Rc::new(AtomicU8::new(1));
+
     let i = integration.clone();
     let p = painter.clone();
+    let r = render_flow.clone();
     area.connect_render(move |_, _| {
         let mut integration = i.borrow_mut();
         let mut painter = p.borrow_mut();
@@ -109,13 +111,13 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
 
         {
             let control_flow = if integration.should_quit() {
-                glutin::event_loop::ControlFlow::Exit
+                2
             } else if needs_repaint {
-                glutin::event_loop::ControlFlow::Poll
+                0
             } else {
-                glutin::event_loop::ControlFlow::Wait
+                1
             };
-            tx.send(control_flow).unwrap();
+            r.store(control_flow, Ordering::Relaxed);
         }
 
         integration.maybe_autosave(gl_window.window());
@@ -129,8 +131,11 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
         match event {
             glutin::event::Event::MainEventsCleared => {
                 area.queue_render();
-                while let Ok(c) = rx.try_recv() {
-                    *control_flow = c;
+                match render_flow.load(Ordering::Relaxed) {
+                    0 => *control_flow = glutin::event_loop::ControlFlow::Poll,
+                    1 => *control_flow = glutin::event_loop::ControlFlow::Wait,
+                    2 => *control_flow = glutin::event_loop::ControlFlow::Exit,
+                    _ => unreachable!(),
                 }
             },
             glutin::event::Event::WindowEvent { event, .. } => {
