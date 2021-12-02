@@ -81,28 +81,32 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
 
     let painter = Rc::new(RefCell::new(painter));
     let render_flow = Rc::new(AtomicU8::new(1));
+    let gl_window = Rc::new(gl_window);
+    let gl = Rc::new(gl);
 
     let i = integration.clone();
     let p = painter.clone();
     let r = render_flow.clone();
+    let gl_window_ = gl_window.clone();
+    let gl_ = gl.clone();
     area.connect_render(move |_, _| {
         let mut integration = i.borrow_mut();
         let mut painter = p.borrow_mut();
-        let (needs_repaint, shapes) = integration.update(gl_window.window(), painter.deref_mut());
+        let (needs_repaint, shapes) = integration.update(gl_window_.window(), painter.deref_mut());
         let clipped_meshes = integration.egui_ctx.tessellate(shapes);
 
         {
             let color = integration.app.clear_color();
             unsafe {
                 use glow::HasContext as _;
-                gl.disable(glow::SCISSOR_TEST);
-                gl.clear_color(color[0], color[1], color[2], color[3]);
-                gl.clear(glow::COLOR_BUFFER_BIT);
+                gl_.disable(glow::SCISSOR_TEST);
+                gl_.clear_color(color[0], color[1], color[2], color[3]);
+                gl_.clear(glow::COLOR_BUFFER_BIT);
             }
-            painter.upload_egui_texture(&gl, &integration.egui_ctx.texture());
+            painter.upload_egui_texture(&gl_, &integration.egui_ctx.texture());
             painter.paint_meshes(
-                gl_window.window().inner_size().into(),
-                &gl,
+                gl_window_.window().inner_size().into(),
+                &gl_,
                 integration.egui_ctx.pixels_per_point(),
                 clipped_meshes,
             );
@@ -120,13 +124,13 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
             r.store(control_flow, Ordering::Relaxed);
         }
 
-        integration.maybe_autosave(gl_window.window());
+        integration.maybe_autosave(gl_window_.window());
         gtk::Inhibit(false)
     });
 
     event_loop.run(move |event, _, control_flow| {
         let mut integration = integration.borrow_mut();
-        let painter = painter.borrow_mut();
+        let mut painter = painter.borrow_mut();
         dbg!(&event);
         match event {
             glutin::event::Event::MainEventsCleared => {
@@ -147,8 +151,8 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
             }
             glutin::event::Event::LoopDestroyed => {
                 // TODO
-                //integration.on_exit(gl_window.window());
-                //painter.destroy(&gl);
+                integration.on_exit(gl_window.window());
+                painter.destroy(&gl);
             }
             glutin::event::Event::UserEvent(RequestRepaintEvent) => {
                 area.queue_render();
