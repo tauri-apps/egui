@@ -125,7 +125,7 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
     event_loop.run(move |event, _, control_flow| {
         let mut integration = integration.borrow_mut();
         let painter = painter.borrow_mut();
-        //dbg!(&event);
+        dbg!(&event);
         match event {
             glutin::event::Event::MainEventsCleared => {
                 area.queue_render();
@@ -134,7 +134,7 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
                 }
             },
             glutin::event::Event::WindowEvent { event, .. } => {
-                //area.queue_render();
+                area.queue_render();
                 integration.on_event(&event);
                 if integration.should_quit() {
                     *control_flow = glutin::event_loop::ControlFlow::Exit;

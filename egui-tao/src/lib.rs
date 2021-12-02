@@ -229,6 +229,8 @@ impl State {
                 self.on_cursor_moved(*position);
                 egui_ctx.is_using_pointer()
             }
+            // Gtk leave event is triggered even the cursor is in child widget
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             WindowEvent::CursorLeft { .. } => {
                 self.pointer_pos_in_points = None;
                 self.egui_input.events.push(egui::Event::PointerGone);
