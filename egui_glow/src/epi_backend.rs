@@ -47,9 +47,9 @@ fn create_display(
 // ----------------------------------------------------------------------------
 
 pub use epi::NativeOptions;
-use std::rc::Rc;
 use std::cell::RefCell;
 use std::ops::DerefMut;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicU8, Ordering};
 
 /// Run an egui app
@@ -110,7 +110,6 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
                 integration.egui_ctx.pixels_per_point(),
                 clipped_meshes,
             );
-
         }
 
         {
@@ -131,7 +130,7 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
     event_loop.run(move |event, _, control_flow| {
         let mut integration = integration.borrow_mut();
         let mut painter = painter.borrow_mut();
-        //dbg!(&event);
+        dbg!(&event);
         match event {
             glutin::event::Event::MainEventsCleared => {
                 area.queue_render();
@@ -141,7 +140,7 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
                     2 => *control_flow = glutin::event_loop::ControlFlow::Exit,
                     _ => unreachable!(),
                 }
-            },
+            }
             glutin::event::Event::WindowEvent { event, .. } => {
                 area.queue_render();
                 integration.on_event(&event);
@@ -150,7 +149,6 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
                 }
             }
             glutin::event::Event::LoopDestroyed => {
-                // TODO
                 integration.on_exit(gl_window.window());
                 painter.destroy(&gl);
             }

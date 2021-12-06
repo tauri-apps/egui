@@ -264,8 +264,7 @@ impl State {
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 self.on_keyboard_input(event);
-                egui_ctx.wants_keyboard_input()
-                    || event.physical_key == tao::keyboard::KeyCode::Tab
+                egui_ctx.wants_keyboard_input() || event.physical_key == tao::keyboard::KeyCode::Tab
             }
             WindowEvent::Focused(_) => {
                 // We will not be given a KeyboardInput event when the modifiers are released while
@@ -583,22 +582,22 @@ fn is_printable_char(chr: char) -> bool {
 fn is_cut_command(modifiers: egui::Modifiers, keycode: tao::keyboard::KeyCode) -> bool {
     (modifiers.command && keycode == tao::keyboard::KeyCode::KeyX)
         || (cfg!(target_os = "windows")
-        && modifiers.shift
-        && keycode == tao::keyboard::KeyCode::Delete)
+            && modifiers.shift
+            && keycode == tao::keyboard::KeyCode::Delete)
 }
 
 fn is_copy_command(modifiers: egui::Modifiers, keycode: tao::keyboard::KeyCode) -> bool {
     (modifiers.command && keycode == tao::keyboard::KeyCode::KeyC)
         || (cfg!(target_os = "windows")
-        && modifiers.ctrl
-        && keycode == tao::keyboard::KeyCode::Insert)
+            && modifiers.ctrl
+            && keycode == tao::keyboard::KeyCode::Insert)
 }
 
 fn is_paste_command(modifiers: egui::Modifiers, keycode: tao::keyboard::KeyCode) -> bool {
     (modifiers.command && keycode == tao::keyboard::KeyCode::KeyV)
         || (cfg!(target_os = "windows")
-        && modifiers.shift
-        && keycode == tao::keyboard::KeyCode::Insert)
+            && modifiers.shift
+            && keycode == tao::keyboard::KeyCode::Insert)
 }
 
 fn translate_mouse_button(button: tao::event::MouseButton) -> Option<egui::PointerButton> {
