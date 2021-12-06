@@ -131,7 +131,7 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
     event_loop.run(move |event, _, control_flow| {
         let mut integration = integration.borrow_mut();
         let mut painter = painter.borrow_mut();
-        dbg!(&event);
+        //dbg!(&event);
         match event {
             glutin::event::Event::MainEventsCleared => {
                 area.queue_render();
