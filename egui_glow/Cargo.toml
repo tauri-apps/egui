@@ -27,7 +27,7 @@ epi = { version = "0.15.0", path = "../epi", optional = true }
 glow = "0.11"
 memoffset = "0.6"
 
-[target.'cfg(target_arch = "linux")'.dependencies]
+[target.'cfg(target_os = "linux")'.dependencies]
 gtk= "0.14"
 glib = "0.14"
 
