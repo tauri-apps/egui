@@ -76,9 +76,9 @@
     clippy::verbose_file_reads,
     clippy::zero_sized_map_values,
     future_incompatible,
-    missing_crate_level_docs,
     nonstandard_style,
-    rust_2018_idioms
+    rust_2018_idioms,
+    rustdoc::missing_crate_level_docs
 )]
 #![allow(clippy::float_cmp)]
 #![allow(clippy::manual_range_contains)]
@@ -463,6 +463,9 @@ impl State {
             // This is still buggy in tao despite
             // https://github.com/rust-windowing/tao/issues/1695 being closed
             delta.x *= -1.0;
+        }
+        if cfg!(target_os = "windows") {
+            delta.x *= -1.0; // until https://github.com/rust-windowing/winit/pull/2101 is merged
         }
 
         if self.egui_input.modifiers.ctrl || self.egui_input.modifiers.command {

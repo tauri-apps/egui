@@ -1,21 +1,25 @@
 //! Simple plotting library.
 
+use crate::*;
+use epaint::ahash::AHashSet;
+use epaint::color::Hsva;
+use epaint::util::FloatOrd;
+use items::PlotItem;
+use legend::LegendWidget;
+use transform::{PlotBounds, ScreenTransform};
+
+pub use items::{
+    Arrows, Bar, BarChart, BoxElem, BoxPlot, BoxSpread, HLine, Line, LineStyle, MarkerShape,
+    PlotImage, Points, Polygon, Text, VLine, Value, Values,
+};
+pub use legend::{Corner, Legend};
+
 mod items;
 mod legend;
 mod transform;
 
-use items::PlotItem;
-pub use items::{
-    Arrows, HLine, Line, LineStyle, MarkerShape, PlotImage, Points, Polygon, Text, VLine, Value,
-    Values,
-};
-use legend::LegendWidget;
-pub use legend::{Corner, Legend};
-use transform::{Bounds, ScreenTransform};
-
-use crate::*;
-use color::Hsva;
-use epaint::ahash::AHashSet;
+type CustomLabelFunc = dyn Fn(&str, &Value) -> String;
+type CustomLabelFuncRef = Option<Box<CustomLabelFunc>>;
 
 // ----------------------------------------------------------------------------
 
@@ -23,12 +27,11 @@ use epaint::ahash::AHashSet;
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Clone)]
 struct PlotMemory {
-    bounds: Bounds,
     auto_bounds: bool,
     hovered_entry: Option<String>,
     hidden_items: AHashSet<String>,
-    min_auto_bounds: Bounds,
-    last_screen_transform: Option<ScreenTransform>,
+    min_auto_bounds: PlotBounds,
+    last_screen_transform: ScreenTransform,
 }
 
 impl PlotMemory {
@@ -65,7 +68,7 @@ pub struct Plot {
     center_y_axis: bool,
     allow_zoom: bool,
     allow_drag: bool,
-    min_auto_bounds: Bounds,
+    min_auto_bounds: PlotBounds,
     margin_fraction: Vec2,
 
     min_size: Vec2,
@@ -76,6 +79,7 @@ pub struct Plot {
 
     show_x: bool,
     show_y: bool,
+    custom_label_func: CustomLabelFuncRef,
     legend_config: Option<Legend>,
     show_background: bool,
     show_axes: [bool; 2],
@@ -91,7 +95,7 @@ impl Plot {
             center_y_axis: false,
             allow_zoom: true,
             allow_drag: true,
-            min_auto_bounds: Bounds::NOTHING,
+            min_auto_bounds: PlotBounds::NOTHING,
             margin_fraction: Vec2::splat(0.05),
 
             min_size: Vec2::splat(64.0),
@@ -102,6 +106,7 @@ impl Plot {
 
             show_x: true,
             show_y: true,
+            custom_label_func: None,
             legend_config: None,
             show_background: true,
             show_axes: [true; 2],
@@ -182,6 +187,35 @@ impl Plot {
         self
     }
 
+    /// Provide a function to customize the on-hovel label for the x and y axis
+    ///
+    /// ```
+    /// # egui::__run_test_ui(|ui| {
+    /// use egui::plot::{Line, Plot, Value, Values};
+    /// let sin = (0..1000).map(|i| {
+    ///     let x = i as f64 * 0.01;
+    ///     Value::new(x, x.sin())
+    /// });
+    /// let line = Line::new(Values::from_values_iter(sin));
+    /// Plot::new("my_plot").view_aspect(2.0)
+    /// .custom_label_func(|name, value| {
+    ///     if !name.is_empty() {
+    ///         format!("{}: {:.*}%", name, 1, value.y).to_string()
+    ///     } else {
+    ///         "".to_string()
+    ///     }
+    /// })
+    /// .show(ui, |plot_ui| plot_ui.line(line));
+    /// # });
+    /// ```
+    pub fn custom_label_func<F: 'static + Fn(&str, &Value) -> String>(
+        mut self,
+        custom_lebel_func: F,
+    ) -> Self {
+        self.custom_label_func = Some(Box::new(custom_lebel_func));
+        self
+    }
+
     /// Expand bounds to include the given x value.
     /// For instance, to always show the y axis, call `plot.include_x(0.0)`.
     pub fn include_x(mut self, x: impl Into<f64>) -> Self {
@@ -219,7 +253,7 @@ impl Plot {
     }
 
     /// Interact with and add items to the plot and finally draw it.
-    pub fn show(self, ui: &mut Ui, build_fn: impl FnOnce(&mut PlotUi)) -> Response {
+    pub fn show<R>(self, ui: &mut Ui, build_fn: impl FnOnce(&mut PlotUi) -> R) -> InnerResponse<R> {
         let Self {
             id_source,
             center_x_axis,
@@ -235,41 +269,11 @@ impl Plot {
             view_aspect,
             mut show_x,
             mut show_y,
+            custom_label_func,
             legend_config,
             show_background,
             show_axes,
         } = self;
-
-        let plot_id = ui.make_persistent_id(id_source);
-        let mut memory = PlotMemory::load(ui.ctx(), plot_id).unwrap_or_else(|| PlotMemory {
-            bounds: min_auto_bounds,
-            auto_bounds: !min_auto_bounds.is_valid(),
-            hovered_entry: None,
-            hidden_items: Default::default(),
-            min_auto_bounds,
-            last_screen_transform: None,
-        });
-
-        // If the min bounds changed, recalculate everything.
-        if min_auto_bounds != memory.min_auto_bounds {
-            memory = PlotMemory {
-                bounds: min_auto_bounds,
-                auto_bounds: !min_auto_bounds.is_valid(),
-                hovered_entry: None,
-                min_auto_bounds,
-                ..memory
-            };
-            memory.clone().store(ui.ctx(), plot_id);
-        }
-
-        let PlotMemory {
-            mut bounds,
-            mut auto_bounds,
-            mut hovered_entry,
-            mut hidden_items,
-            last_screen_transform,
-            ..
-        } = memory;
 
         // Determine the size of the plot in the UI
         let size = {
@@ -295,8 +299,42 @@ impl Plot {
             vec2(width, height)
         };
 
+        // Allocate the space.
         let (rect, response) = ui.allocate_exact_size(size, Sense::drag());
-        let plot_painter = ui.painter().sub_region(rect);
+
+        // Load or initialize the memory.
+        let plot_id = ui.make_persistent_id(id_source);
+        let mut memory = PlotMemory::load(ui.ctx(), plot_id).unwrap_or_else(|| PlotMemory {
+            auto_bounds: !min_auto_bounds.is_valid(),
+            hovered_entry: None,
+            hidden_items: Default::default(),
+            min_auto_bounds,
+            last_screen_transform: ScreenTransform::new(
+                rect,
+                min_auto_bounds,
+                center_x_axis,
+                center_y_axis,
+            ),
+        });
+
+        // If the min bounds changed, recalculate everything.
+        if min_auto_bounds != memory.min_auto_bounds {
+            memory = PlotMemory {
+                auto_bounds: !min_auto_bounds.is_valid(),
+                hovered_entry: None,
+                min_auto_bounds,
+                ..memory
+            };
+            memory.clone().store(ui.ctx(), plot_id);
+        }
+
+        let PlotMemory {
+            mut auto_bounds,
+            mut hovered_entry,
+            mut hidden_items,
+            last_screen_transform,
+            ..
+        } = memory;
 
         // Call the plot build function.
         let mut plot_ui = PlotUi {
@@ -304,17 +342,19 @@ impl Plot {
             next_auto_color_idx: 0,
             last_screen_transform,
             response,
+            ctx: ui.ctx().clone(),
         };
-        build_fn(&mut plot_ui);
+        let inner = build_fn(&mut plot_ui);
         let PlotUi {
             mut items,
-            response,
+            mut response,
+            last_screen_transform,
             ..
         } = plot_ui;
 
         // Background
         if show_background {
-            plot_painter.add(epaint::RectShape {
+            ui.painter().sub_region(rect).add(epaint::RectShape {
                 rect,
                 corner_radius: 2.0,
                 fill: ui.visuals().extreme_bg_color,
@@ -322,7 +362,7 @@ impl Plot {
             });
         }
 
-        // Legend
+        // --- Legend ---
         let legend = legend_config
             .and_then(|config| LegendWidget::try_new(rect, config, &items, &hidden_items));
         // Don't show hover cursor when hovering over legend.
@@ -341,6 +381,9 @@ impl Plot {
         }
         // Move highlighted items to front.
         items.sort_by_key(|item| item.highlighted());
+
+        // --- Bound computation ---
+        let mut bounds = *last_screen_transform.bounds();
 
         // Allow double clicking to reset to automatic bounds.
         auto_bounds |= response.double_clicked_by(PointerButton::Primary);
@@ -363,6 +406,7 @@ impl Plot {
 
         // Dragging
         if allow_drag && response.dragged_by(PointerButton::Primary) {
+            response = response.on_hover_cursor(CursorIcon::Grabbing);
             transform.translate_bounds(-response.drag_delta());
             auto_bounds = false;
         }
@@ -393,12 +437,11 @@ impl Plot {
             .iter_mut()
             .for_each(|item| item.initialize(transform.bounds().range_x()));
 
-        let bounds = *transform.bounds();
-
         let prepared = PreparedPlot {
             items,
             show_x,
             show_y,
+            custom_label_func,
             show_axes,
             transform: transform.clone(),
         };
@@ -411,20 +454,21 @@ impl Plot {
         }
 
         let memory = PlotMemory {
-            bounds,
             auto_bounds,
             hovered_entry,
             hidden_items,
             min_auto_bounds,
-            last_screen_transform: Some(transform),
+            last_screen_transform: transform,
         };
         memory.store(ui.ctx(), plot_id);
 
-        if show_x || show_y {
+        let response = if show_x || show_y {
             response.on_hover_cursor(CursorIcon::Crosshair)
         } else {
             response
-        }
+        };
+
+        InnerResponse { inner, response }
     }
 }
 
@@ -433,8 +477,9 @@ impl Plot {
 pub struct PlotUi {
     items: Vec<Box<dyn PlotItem>>,
     next_auto_color_idx: usize,
-    last_screen_transform: Option<ScreenTransform>,
+    last_screen_transform: ScreenTransform,
     response: Response,
+    ctx: CtxRef,
 }
 
 impl PlotUi {
@@ -446,35 +491,45 @@ impl PlotUi {
         Hsva::new(h, 0.85, 0.5, 1.0).into() // TODO: OkLab or some other perspective color space
     }
 
-    /// The pointer position in plot coordinates, if the pointer is inside the plot area.
+    pub fn ctx(&self) -> &CtxRef {
+        &self.ctx
+    }
+
+    /// The plot bounds as they were in the last frame. If called on the first frame and the bounds were not
+    /// further specified in the plot builder, this will return bounds centered on the origin. The bounds do
+    /// not change until the plot is drawn.
+    pub fn plot_bounds(&self) -> PlotBounds {
+        *self.last_screen_transform.bounds()
+    }
+
+    /// Returns `true` if the plot area is currently hovered.
+    pub fn plot_hovered(&self) -> bool {
+        self.response.hovered()
+    }
+
+    /// The pointer position in plot coordinates. Independent of whether the pointer is in the plot area.
     pub fn pointer_coordinate(&self) -> Option<Value> {
-        let last_screen_transform = self.last_screen_transform.as_ref()?;
         // We need to subtract the drag delta to keep in sync with the frame-delayed screen transform:
-        let last_pos = self.response.hover_pos()? - self.response.drag_delta();
-        let value = last_screen_transform.value_from_position(last_pos);
+        let last_pos = self.ctx().input().pointer.latest_pos()? - self.response.drag_delta();
+        let value = self.plot_from_screen(last_pos);
         Some(value)
     }
 
     /// The pointer drag delta in plot coordinates.
     pub fn pointer_coordinate_drag_delta(&self) -> Vec2 {
-        self.last_screen_transform
-            .as_ref()
-            .map_or(Vec2::ZERO, |tf| {
-                let delta = self.response.drag_delta();
-                let dp_dv = tf.dpos_dvalue();
-                Vec2::new(delta.x / dp_dv[0] as f32, delta.y / dp_dv[1] as f32)
-            })
+        let delta = self.response.drag_delta();
+        let dp_dv = self.last_screen_transform.dpos_dvalue();
+        Vec2::new(delta.x / dp_dv[0] as f32, delta.y / dp_dv[1] as f32)
+    }
+
+    /// Transform the plot coordinates to screen coordinates.
+    pub fn screen_from_plot(&self, position: Value) -> Pos2 {
+        self.last_screen_transform.position_from_value(&position)
     }
 
     /// Transform the screen coordinates to plot coordinates.
-    pub fn plot_from_screen(&self, position: Pos2) -> Pos2 {
-        self.last_screen_transform
-            .as_ref()
-            .map_or(Pos2::ZERO, |tf| {
-                tf.position_from_value(&Value::new(position.x as f64, position.y as f64))
-            })
-            // We need to subtract the drag delta since the last frame.
-            - self.response.drag_delta()
+    pub fn plot_from_screen(&self, position: Pos2) -> Value {
+        self.last_screen_transform.value_from_position(position)
     }
 
     /// Add a data line.
@@ -562,12 +617,39 @@ impl PlotUi {
         }
         self.items.push(Box::new(vline));
     }
+
+    /// Add a box plot diagram.
+    pub fn box_plot(&mut self, mut box_plot: BoxPlot) {
+        if box_plot.boxes.is_empty() {
+            return;
+        }
+
+        // Give the elements an automatic color if no color has been assigned.
+        if box_plot.default_color == Color32::TRANSPARENT {
+            box_plot = box_plot.color(self.auto_color());
+        }
+        self.items.push(Box::new(box_plot));
+    }
+
+    /// Add a bar chart.
+    pub fn bar_chart(&mut self, mut chart: BarChart) {
+        if chart.bars.is_empty() {
+            return;
+        }
+
+        // Give the elements an automatic color if no color has been assigned.
+        if chart.default_color == Color32::TRANSPARENT {
+            chart = chart.color(self.auto_color());
+        }
+        self.items.push(Box::new(chart));
+    }
 }
 
 struct PreparedPlot {
     items: Vec<Box<dyn PlotItem>>,
     show_x: bool,
     show_y: bool,
+    custom_label_func: CustomLabelFuncRef,
     show_axes: [bool; 2],
     transform: ScreenTransform,
 }
@@ -686,6 +768,7 @@ impl PreparedPlot {
             transform,
             show_x,
             show_y,
+            custom_label_func,
             items,
             ..
         } = self;
@@ -694,88 +777,31 @@ impl PreparedPlot {
             return;
         }
 
-        let interact_radius: f32 = 16.0;
-        let mut closest_value = None;
-        let mut closest_item = None;
-        let mut closest_dist_sq = interact_radius.powi(2);
-        for item in items {
-            if let Some(values) = item.values() {
-                for value in &values.values {
-                    let pos = transform.position_from_value(value);
-                    let dist_sq = pointer.distance_sq(pos);
-                    if dist_sq < closest_dist_sq {
-                        closest_dist_sq = dist_sq;
-                        closest_value = Some(value);
-                        closest_item = Some(item.name());
-                    }
-                }
-            }
-        }
+        let interact_radius_sq: f32 = (16.0f32).powi(2);
 
-        let mut prefix = String::new();
-        if let Some(name) = closest_item {
-            if !name.is_empty() {
-                prefix = format!("{}\n", name);
-            }
-        }
+        let candidates = items.iter().filter_map(|item| {
+            let item = &**item;
+            let closest = item.find_closest(pointer, transform);
 
-        let line_color = if ui.visuals().dark_mode {
-            Color32::from_gray(100).additive()
+            Some(item).zip(closest)
+        });
+
+        let closest = candidates
+            .min_by_key(|(_, elem)| elem.dist_sq.ord())
+            .filter(|(_, elem)| elem.dist_sq <= interact_radius_sq);
+
+        let plot = items::PlotConfig {
+            ui,
+            transform,
+            show_x: *show_x,
+            show_y: *show_y,
+        };
+
+        if let Some((item, elem)) = closest {
+            item.on_hover(elem, shapes, &plot, custom_label_func);
         } else {
-            Color32::from_black_alpha(180)
-        };
-
-        let value = if let Some(value) = closest_value {
-            let position = transform.position_from_value(value);
-            shapes.push(Shape::circle_filled(position, 3.0, line_color));
-            *value
-        } else {
-            transform.value_from_position(pointer)
-        };
-        let pointer = transform.position_from_value(&value);
-
-        let rect = transform.frame();
-
-        if *show_x {
-            // vertical line
-            shapes.push(Shape::line_segment(
-                [pos2(pointer.x, rect.top()), pos2(pointer.x, rect.bottom())],
-                (1.0, line_color),
-            ));
+            let value = transform.value_from_position(pointer);
+            items::rulers_at_value(pointer, value, "", &plot, shapes, custom_label_func);
         }
-        if *show_y {
-            // horizontal line
-            shapes.push(Shape::line_segment(
-                [pos2(rect.left(), pointer.y), pos2(rect.right(), pointer.y)],
-                (1.0, line_color),
-            ));
-        }
-
-        let text = {
-            let scale = transform.dvalue_dpos();
-            let x_decimals = ((-scale[0].abs().log10()).ceil().at_least(0.0) as usize).at_most(6);
-            let y_decimals = ((-scale[1].abs().log10()).ceil().at_least(0.0) as usize).at_most(6);
-            if *show_x && *show_y {
-                format!(
-                    "{}x = {:.*}\ny = {:.*}",
-                    prefix, x_decimals, value.x, y_decimals, value.y
-                )
-            } else if *show_x {
-                format!("{}x = {:.*}", prefix, x_decimals, value.x)
-            } else if *show_y {
-                format!("{}y = {:.*}", prefix, y_decimals, value.y)
-            } else {
-                unreachable!()
-            }
-        };
-
-        shapes.push(Shape::text(
-            ui.fonts(),
-            pointer + vec2(3.0, -2.0),
-            Align2::LEFT_BOTTOM,
-            text,
-            TextStyle::Body,
-            ui.visuals().text_color(),
-        ));
     }
 }

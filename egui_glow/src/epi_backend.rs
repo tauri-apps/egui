@@ -7,7 +7,7 @@ struct RequestRepaintEvent;
 
 struct GlowRepaintSignal(std::sync::Mutex<glutin::event_loop::EventLoopProxy<RequestRepaintEvent>>);
 
-impl epi::RepaintSignal for GlowRepaintSignal {
+impl epi::backend::RepaintSignal for GlowRepaintSignal {
     fn request_repaint(&self) {
         self.0.lock().unwrap().send_event(RequestRepaintEvent).ok();
     }
@@ -47,7 +47,6 @@ fn create_display(
 
 pub use epi::NativeOptions;
 use std::cell::RefCell;
-use std::ops::DerefMut;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU8, Ordering};
 
@@ -72,7 +71,6 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
     let mut integration = egui_tao::epi::EpiIntegration::new(
         "egui_glow",
         gl_window.window(),
-        &mut painter,
         repaint_signal,
         persistence,
         app,
@@ -91,9 +89,15 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
 
-            let (needs_repaint, shapes) = integration.update(gl_window.window(), &mut painter);
+            let (needs_repaint, mut tex_allocation_data, shapes) =
+                integration.update(gl_window.window());
             let clipped_meshes = integration.egui_ctx.tessellate(shapes);
 
+            for (id, image) in tex_allocation_data.creations {
+                painter.set_texture(&gl, id, &image);
+            }
+
+            // paint:
             {
                 let color = integration.app.clear_color();
                 unsafe {
@@ -102,15 +106,19 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
                     gl.clear_color(color[0], color[1], color[2], color[3]);
                     gl.clear(glow::COLOR_BUFFER_BIT);
                 }
-                painter.upload_egui_texture(&gl, &integration.egui_ctx.texture());
+                painter.upload_egui_texture(&gl, &integration.egui_ctx.font_image());
                 painter.paint_meshes(
-                    gl_window.window().inner_size().into(),
                     &gl,
+                    gl_window.window().inner_size().into(),
                     integration.egui_ctx.pixels_per_point(),
                     clipped_meshes,
                 );
 
                 gl_window.swap_buffers().unwrap();
+            }
+
+            for id in tex_allocation_data.destructions.drain(..) {
+                painter.free_texture(id);
             }
 
             {
@@ -179,13 +187,12 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
         event_loop.create_proxy(),
     )));
 
-    let mut painter = crate::Painter::new(&gl, None, "")
+    let painter = crate::Painter::new(&gl, None, "")
         .map_err(|error| eprintln!("some OpenGL error occurred {}\n", error))
         .unwrap();
     let integration = Rc::new(RefCell::new(egui_tao::epi::EpiIntegration::new(
         "egui_glow",
         gl_window.window(),
-        &mut painter,
         repaint_signal,
         persistence,
         app,
@@ -204,8 +211,13 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
     area.connect_render(move |_, _| {
         let mut integration = i.borrow_mut();
         let mut painter = p.borrow_mut();
-        let (needs_repaint, shapes) = integration.update(gl_window_.window(), painter.deref_mut());
+        let (needs_repaint, mut tex_allocation_data, shapes) =
+            integration.update(gl_window_.window());
         let clipped_meshes = integration.egui_ctx.tessellate(shapes);
+
+        for (id, image) in tex_allocation_data.creations {
+            painter.set_texture(&gl_, id, &image);
+        }
 
         {
             let color = integration.app.clear_color();
@@ -215,13 +227,17 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
                 gl_.clear_color(color[0], color[1], color[2], color[3]);
                 gl_.clear(glow::COLOR_BUFFER_BIT);
             }
-            painter.upload_egui_texture(&gl_, &integration.egui_ctx.texture());
+            painter.upload_egui_texture(&gl_, &integration.egui_ctx.font_image());
             painter.paint_meshes(
-                gl_window_.window().inner_size().into(),
                 &gl_,
+                gl_window_.window().inner_size().into(),
                 integration.egui_ctx.pixels_per_point(),
                 clipped_meshes,
             );
+        }
+
+        for id in tex_allocation_data.destructions.drain(..) {
+            painter.free_texture(id);
         }
 
         {
