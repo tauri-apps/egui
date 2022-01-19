@@ -23,7 +23,7 @@ all-features = true
 
 [dependencies]
 egui = { version = "0.16.0", path = "../egui", default-features = false, features = ["single_threaded"] }
-tao = { git = "https://github.com/tauri-apps/tao", branch = "next", version = "0.5" }
+tao = { git = "https://github.com/tauri-apps/tao", branch = "dev", version = "0.5" }
 
 epi = { version = "0.16.0", path = "../epi", optional = true }
 
