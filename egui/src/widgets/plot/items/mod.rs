@@ -7,13 +7,13 @@ use epaint::Mesh;
 
 use crate::*;
 
-use super::{CustomLabelFuncRef, PlotBounds, ScreenTransform};
+use super::{LabelFormatter, PlotBounds, ScreenTransform};
 use rect_elem::*;
-use values::*;
+use values::{ClosestElem, PlotGeometry};
 
 pub use bar::Bar;
 pub use box_elem::{BoxElem, BoxSpread};
-pub use values::{LineStyle, MarkerShape, Value, Values};
+pub use values::{LineStyle, MarkerShape, Orientation, Value, Values};
 
 mod bar;
 mod box_elem;
@@ -66,7 +66,7 @@ pub(super) trait PlotItem {
         elem: ClosestElem,
         shapes: &mut Vec<Shape>,
         plot: &PlotConfig<'_>,
-        custom_label_func: &CustomLabelFuncRef,
+        label_formatter: &LabelFormatter,
     ) {
         let points = match self.geometry() {
             PlotGeometry::Points(points) => points,
@@ -89,7 +89,7 @@ pub(super) trait PlotItem {
         let pointer = plot.transform.position_from_value(&value);
         shapes.push(Shape::circle_filled(pointer, 3.0, line_color));
 
-        rulers_at_value(pointer, value, self.name(), plot, shapes, custom_label_func);
+        rulers_at_value(pointer, value, self.name(), plot, shapes, label_formatter);
     }
 }
 
@@ -117,8 +117,8 @@ impl HLine {
     }
 
     /// Highlight this line in the plot by scaling up the line.
-    pub fn highlight(mut self) -> Self {
-        self.highlight = true;
+    pub fn highlight(mut self, highlight: bool) -> Self {
+        self.highlight = highlight;
         self
     }
 
@@ -227,8 +227,8 @@ impl VLine {
     }
 
     /// Highlight this line in the plot by scaling up the line.
-    pub fn highlight(mut self) -> Self {
-        self.highlight = true;
+    pub fn highlight(mut self, highlight: bool) -> Self {
+        self.highlight = highlight;
         self
     }
 
@@ -338,8 +338,8 @@ impl Line {
     }
 
     /// Highlight this line in the plot by scaling up the line.
-    pub fn highlight(mut self) -> Self {
-        self.highlight = true;
+    pub fn highlight(mut self, highlight: bool) -> Self {
+        self.highlight = highlight;
         self
     }
 
@@ -506,8 +506,8 @@ impl Polygon {
 
     /// Highlight this polygon in the plot by scaling up the stroke and reducing the fill
     /// transparency.
-    pub fn highlight(mut self) -> Self {
-        self.highlight = true;
+    pub fn highlight(mut self, highlight: bool) -> Self {
+        self.highlight = highlight;
         self
     }
 
@@ -613,9 +613,9 @@ impl PlotItem for Polygon {
 }
 
 /// Text inside the plot.
+#[derive(Clone)]
 pub struct Text {
-    pub(super) text: String,
-    pub(super) style: TextStyle,
+    pub(super) text: WidgetText,
     pub(super) position: Value,
     pub(super) name: String,
     pub(super) highlight: bool,
@@ -624,11 +624,9 @@ pub struct Text {
 }
 
 impl Text {
-    #[allow(clippy::needless_pass_by_value)]
-    pub fn new(position: Value, text: impl ToString) -> Self {
+    pub fn new(position: Value, text: impl Into<WidgetText>) -> Self {
         Self {
-            text: text.to_string(),
-            style: TextStyle::Small,
+            text: text.into(),
             position,
             name: Default::default(),
             highlight: false,
@@ -638,18 +636,12 @@ impl Text {
     }
 
     /// Highlight this text in the plot by drawing a rectangle around it.
-    pub fn highlight(mut self) -> Self {
-        self.highlight = true;
+    pub fn highlight(mut self, highlight: bool) -> Self {
+        self.highlight = highlight;
         self
     }
 
-    /// Text style. Default is `TextStyle::Small`.
-    pub fn style(mut self, style: TextStyle) -> Self {
-        self.style = style;
-        self
-    }
-
-    /// Text color. Default is `Color32::TRANSPARENT` which means a color will be auto-assigned.
+    /// Text color.
     pub fn color(mut self, color: impl Into<Color32>) -> Self {
         self.color = color.into();
         self
@@ -681,14 +673,23 @@ impl PlotItem for Text {
         } else {
             self.color
         };
+
+        let galley =
+            self.text
+                .clone()
+                .into_galley(ui, Some(false), f32::INFINITY, TextStyle::Small);
+
         let pos = transform.position_from_value(&self.position);
-        let galley = ui
-            .fonts()
-            .layout_no_wrap(self.text.clone(), self.style, color);
         let rect = self
             .anchor
             .anchor_rect(Rect::from_min_size(pos, galley.size()));
-        shapes.push(Shape::galley(rect.min, galley));
+
+        let mut text_shape = epaint::TextShape::new(rect.min, galley.galley);
+        if !galley.galley_has_color {
+            text_shape.override_text_color = Some(color);
+        }
+        shapes.push(text_shape.into());
+
         if self.highlight {
             shapes.push(Shape::rect_stroke(
                 rect.expand(2.0),
@@ -763,8 +764,8 @@ impl Points {
     }
 
     /// Highlight these points in the plot by scaling up their markers.
-    pub fn highlight(mut self) -> Self {
-        self.highlight = true;
+    pub fn highlight(mut self, highlight: bool) -> Self {
+        self.highlight = highlight;
         self
     }
 
@@ -807,9 +808,9 @@ impl Points {
 
 impl PlotItem for Points {
     fn get_shapes(&self, _ui: &mut Ui, transform: &ScreenTransform, shapes: &mut Vec<Shape>) {
-        let sqrt_3 = 3f32.sqrt();
-        let frac_sqrt_3_2 = 3f32.sqrt() / 2.0;
-        let frac_1_sqrt_2 = 1.0 / 2f32.sqrt();
+        let sqrt_3 = 3_f32.sqrt();
+        let frac_sqrt_3_2 = 3_f32.sqrt() / 2.0;
+        let frac_1_sqrt_2 = 1.0 / 2_f32.sqrt();
 
         let Self {
             series,
@@ -861,15 +862,20 @@ impl PlotItem for Points {
                         }));
                     }
                     MarkerShape::Diamond => {
-                        let points = vec![tf(1.0, 0.0), tf(0.0, -1.0), tf(-1.0, 0.0), tf(0.0, 1.0)];
+                        let points = vec![
+                            tf(0.0, 1.0),  // bottom
+                            tf(-1.0, 0.0), // left
+                            tf(0.0, -1.0), // top
+                            tf(1.0, 0.0),  // right
+                        ];
                         shapes.push(Shape::convex_polygon(points, fill, stroke));
                     }
                     MarkerShape::Square => {
                         let points = vec![
-                            tf(frac_1_sqrt_2, frac_1_sqrt_2),
-                            tf(frac_1_sqrt_2, -frac_1_sqrt_2),
-                            tf(-frac_1_sqrt_2, -frac_1_sqrt_2),
                             tf(-frac_1_sqrt_2, frac_1_sqrt_2),
+                            tf(-frac_1_sqrt_2, -frac_1_sqrt_2),
+                            tf(frac_1_sqrt_2, -frac_1_sqrt_2),
+                            tf(frac_1_sqrt_2, frac_1_sqrt_2),
                         ];
                         shapes.push(Shape::convex_polygon(points, fill, stroke));
                     }
@@ -893,7 +899,7 @@ impl PlotItem for Points {
                     }
                     MarkerShape::Up => {
                         let points =
-                            vec![tf(0.0, -1.0), tf(-0.5 * sqrt_3, 0.5), tf(0.5 * sqrt_3, 0.5)];
+                            vec![tf(0.0, -1.0), tf(0.5 * sqrt_3, 0.5), tf(-0.5 * sqrt_3, 0.5)];
                         shapes.push(Shape::convex_polygon(points, fill, stroke));
                     }
                     MarkerShape::Down => {
@@ -912,8 +918,8 @@ impl PlotItem for Points {
                     MarkerShape::Right => {
                         let points = vec![
                             tf(1.0, 0.0),
-                            tf(-0.5, -0.5 * sqrt_3),
                             tf(-0.5, 0.5 * sqrt_3),
+                            tf(-0.5, -0.5 * sqrt_3),
                         ];
                         shapes.push(Shape::convex_polygon(points, fill, stroke));
                     }
@@ -979,8 +985,8 @@ impl Arrows {
     }
 
     /// Highlight these arrows in the plot.
-    pub fn highlight(mut self) -> Self {
-        self.highlight = true;
+    pub fn highlight(mut self, highlight: bool) -> Self {
+        self.highlight = highlight;
         self
     }
 
@@ -1074,6 +1080,7 @@ impl PlotItem for Arrows {
 }
 
 /// An image in the plot.
+#[derive(Clone)]
 pub struct PlotImage {
     pub(super) position: Value,
     pub(super) texture_id: TextureId,
@@ -1087,12 +1094,16 @@ pub struct PlotImage {
 
 impl PlotImage {
     /// Create a new image with position and size in plot coordinates.
-    pub fn new(texture_id: TextureId, position: Value, size: impl Into<Vec2>) -> Self {
+    pub fn new(
+        texture_id: impl Into<TextureId>,
+        center_position: Value,
+        size: impl Into<Vec2>,
+    ) -> Self {
         Self {
-            position,
+            position: center_position,
             name: Default::default(),
             highlight: false,
-            texture_id,
+            texture_id: texture_id.into(),
             uv: Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
             size: size.into(),
             bg_fill: Default::default(),
@@ -1101,8 +1112,8 @@ impl PlotImage {
     }
 
     /// Highlight this image in the plot.
-    pub fn highlight(mut self) -> Self {
-        self.highlight = true;
+    pub fn highlight(mut self, highlight: bool) -> Self {
+        self.highlight = highlight;
         self
     }
 
@@ -1291,8 +1302,8 @@ impl BarChart {
     }
 
     /// Highlight all plot elements.
-    pub fn highlight(mut self) -> Self {
-        self.highlight = true;
+    pub fn highlight(mut self, highlight: bool) -> Self {
+        self.highlight = highlight;
         self
     }
 
@@ -1376,7 +1387,7 @@ impl PlotItem for BarChart {
         elem: ClosestElem,
         shapes: &mut Vec<Shape>,
         plot: &PlotConfig<'_>,
-        _: &CustomLabelFuncRef,
+        _: &LabelFormatter,
     ) {
         let bar = &self.bars[elem.index];
 
@@ -1454,8 +1465,8 @@ impl BoxPlot {
     }
 
     /// Highlight all plot elements.
-    pub fn highlight(mut self) -> Self {
-        self.highlight = true;
+    pub fn highlight(mut self, highlight: bool) -> Self {
+        self.highlight = highlight;
         self
     }
 
@@ -1518,7 +1529,7 @@ impl PlotItem for BoxPlot {
         elem: ClosestElem,
         shapes: &mut Vec<Shape>,
         plot: &PlotConfig<'_>,
-        _: &CustomLabelFuncRef,
+        _: &LabelFormatter,
     ) {
         let box_plot = &self.boxes[elem.index];
 
@@ -1617,13 +1628,15 @@ fn add_rulers_and_text(
         text
     });
 
+    let font_id = TextStyle::Body.resolve(plot.ui.style());
+
     let corner_value = elem.corner_value();
     shapes.push(Shape::text(
-        plot.ui.fonts(),
+        &*plot.ui.fonts(),
         plot.transform.position_from_value(&corner_value) + vec2(3.0, -2.0),
         Align2::LEFT_BOTTOM,
         text,
-        TextStyle::Body,
+        font_id,
         plot.ui.visuals().text_color(),
     ));
 }
@@ -1637,7 +1650,7 @@ pub(super) fn rulers_at_value(
     name: &str,
     plot: &PlotConfig<'_>,
     shapes: &mut Vec<Shape>,
-    custom_label_func: &CustomLabelFuncRef,
+    label_formatter: &LabelFormatter,
 ) {
     let line_color = rulers_color(plot.ui);
     if plot.show_x {
@@ -1657,7 +1670,7 @@ pub(super) fn rulers_at_value(
         let scale = plot.transform.dvalue_dpos();
         let x_decimals = ((-scale[0].abs().log10()).ceil().at_least(0.0) as usize).at_most(6);
         let y_decimals = ((-scale[1].abs().log10()).ceil().at_least(0.0) as usize).at_most(6);
-        if let Some(custom_label) = custom_label_func {
+        if let Some(custom_label) = label_formatter {
             custom_label(name, &value)
         } else if plot.show_x && plot.show_y {
             format!(
@@ -1673,12 +1686,14 @@ pub(super) fn rulers_at_value(
         }
     };
 
+    let font_id = TextStyle::Body.resolve(plot.ui.style());
+
     shapes.push(Shape::text(
-        plot.ui.fonts(),
+        &*plot.ui.fonts(),
         pointer + vec2(3.0, -2.0),
         Align2::LEFT_BOTTOM,
         text,
-        TextStyle::Body,
+        font_id,
         plot.ui.visuals().text_color(),
     ));
 }

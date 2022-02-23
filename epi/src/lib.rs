@@ -106,11 +106,11 @@ pub trait App {
     ///
     /// Put your widgets into a [`egui::SidePanel`], [`egui::TopBottomPanel`], [`egui::CentralPanel`], [`egui::Window`] or [`egui::Area`].
     ///
-    /// The given [`egui::CtxRef`] is only valid for the duration of this call.
-    /// The [`Frame`] however can be cloned and saved.
+    /// The [`egui::Context`] and [`Frame`] can be cloned and saved if you like.
     ///
-    /// To force a repaint, call either [`egui::Context::request_repaint`] or [`Frame::request_repaint`].
-    fn update(&mut self, ctx: &egui::CtxRef, frame: &Frame);
+    /// To force a repaint, call either [`egui::Context::request_repaint`] during the call to `update`,
+    /// or call [`Frame::request_repaint`] at any time (e.g. from another thread).
+    fn update(&mut self, ctx: &egui::Context, frame: &Frame);
 
     /// Called once before the first frame.
     ///
@@ -118,18 +118,7 @@ pub trait App {
     /// [`egui::Context::set_visuals`] etc.
     ///
     /// Also allows you to restore state, if there is a storage (required the "persistence" feature).
-    fn setup(&mut self, _ctx: &egui::CtxRef, _frame: &Frame, _storage: Option<&dyn Storage>) {}
-
-    /// If `true` a warm-up call to [`Self::update`] will be issued where
-    /// `ctx.memory().everything_is_visible()` will be set to `true`.
-    ///
-    /// This will help pre-caching all text, preventing stutter when
-    /// opening a window containing new glyphs.
-    ///
-    /// In this warm-up call, all painted shapes will be ignored.
-    fn warm_up_enabled(&self) -> bool {
-        false
-    }
+    fn setup(&mut self, _ctx: &egui::Context, _frame: &Frame, _storage: Option<&dyn Storage>) {}
 
     /// Called on shutdown, and perhaps at regular intervals. Allows you to save state.
     ///
@@ -144,7 +133,20 @@ pub trait App {
     /// where `APPNAME` is what is returned by [`Self::name()`].
     fn save(&mut self, _storage: &mut dyn Storage) {}
 
-    /// Called once on shutdown (before or after [`Self::save`])
+    /// Called before an exit that can be aborted.
+    /// By returning `false` the exit will be aborted. To continue the exit return `true`.
+    ///
+    /// A scenario where this method will be run is after pressing the close button on a native
+    /// window, which allows you to ask the user whether they want to do something before exiting.
+    /// See the example `eframe/examples/confirm_exit.rs` for practical usage.
+    ///
+    /// It will _not_ be called on the web or when the window is forcefully closed.
+    fn on_exit_event(&mut self) -> bool {
+        true
+    }
+
+    /// Called once on shutdown (before or after [`Self::save`]). If you need to abort an exit use
+    /// [`Self::on_exit_event`]
     fn on_exit(&mut self) {}
 
     // ---------
@@ -160,8 +162,13 @@ pub trait App {
     }
 
     /// The size limit of the web app canvas.
+    ///
+    /// By default the size if limited to 1024x2048.
+    ///
+    /// A larger canvas can lead to bad frame rates on some browsers on some platforms.
+    /// In particular, Firefox on Mac and Linux is really bad at handling large WebGL canvases:
+    /// <https://bugzilla.mozilla.org/show_bug.cgi?id=1010527#c0> (unfixed since 2014).
     fn max_size_points(&self) -> egui::Vec2 {
-        // Some browsers get slow with huge WebGL canvases, so we limit the size:
         egui::Vec2::new(1024.0, 2048.0)
     }
 
@@ -174,16 +181,28 @@ pub trait App {
         egui::Color32::from_rgba_unmultiplied(12, 12, 12, 180).into()
     }
 
-    /// Controls wether or not the native window position and size will be
+    /// Controls whether or not the native window position and size will be
     /// persisted (only if the "persistence" feature is enabled).
     fn persist_native_window(&self) -> bool {
         true
     }
 
-    /// Controls wether or not the egui memory (window positions etc) will be
+    /// Controls whether or not the egui memory (window positions etc) will be
     /// persisted (only if the "persistence" feature is enabled).
     fn persist_egui_memory(&self) -> bool {
         true
+    }
+
+    /// If `true` a warm-up call to [`Self::update`] will be issued where
+    /// `ctx.memory().everything_is_visible()` will be set to `true`.
+    ///
+    /// This can help pre-caching resources loaded by different parts of the UI, preventing stutter later on.
+    ///
+    /// In this warm-up call, all painted shapes will be ignored.
+    ///
+    /// The default is `false`, and it is unlikely you will want to change this.
+    fn warm_up_enabled(&self) -> bool {
+        false
     }
 }
 
@@ -211,8 +230,17 @@ pub struct NativeOptions {
     /// The application icon, e.g. in the Windows task bar etc.
     pub icon_data: Option<IconData>,
 
-    /// The initial size of the native window in points (logical pixels).
+    /// The initial (inner) position of the native window in points (logical pixels).
+    pub initial_window_pos: Option<egui::Pos2>,
+
+    /// The initial inner size of the native window in points (logical pixels).
     pub initial_window_size: Option<egui::Vec2>,
+
+    /// The minimum inner window size
+    pub min_window_size: Option<egui::Vec2>,
+
+    /// The maximum inner window size
+    pub max_window_size: Option<egui::Vec2>,
 
     /// Should the app window be resizable?
     pub resizable: bool,
@@ -231,7 +259,10 @@ impl Default for NativeOptions {
             decorated: true,
             drag_and_drop_support: false,
             icon_data: None,
+            initial_window_pos: None,
             initial_window_size: None,
+            min_window_size: None,
+            max_window_size: None,
             resizable: true,
             transparent: false,
         }
@@ -267,7 +298,7 @@ impl Frame {
         Self(Arc::new(Mutex::new(frame_data)))
     }
 
-    /// Convenience to access the underlying `backend::FrameData`.
+    /// Access the underlying [`backend::FrameData`].
     #[doc(hidden)]
     #[inline]
     pub fn lock(&self) -> std::sync::MutexGuard<'_, backend::FrameData> {
@@ -323,41 +354,69 @@ impl Frame {
 
     /// for integrations only: call once per frame
     pub fn take_app_output(&self) -> crate::backend::AppOutput {
-        let mut lock = self.lock();
-        let next_id = lock.output.tex_allocation_data.next_id;
-        let app_output = std::mem::take(&mut lock.output);
-        lock.output.tex_allocation_data.next_id = next_id;
-        app_output
-    }
-
-    /// Allocate a texture. Free it again with [`Self::free_texture`].
-    pub fn alloc_texture(&self, image: Image) -> egui::TextureId {
-        self.lock().output.tex_allocation_data.alloc(image)
-    }
-
-    /// Free a texture that has been previously allocated with [`Self::alloc_texture`]. Idempotent.
-    pub fn free_texture(&self, id: egui::TextureId) {
-        self.lock().output.tex_allocation_data.free(id);
-    }
-}
-
-impl TextureAllocator for Frame {
-    fn alloc(&self, image: Image) -> egui::TextureId {
-        self.lock().output.tex_allocation_data.alloc(image)
-    }
-
-    fn free(&self, id: egui::TextureId) {
-        self.lock().output.tex_allocation_data.free(id);
+        std::mem::take(&mut self.lock().output)
     }
 }
 
 /// Information about the web environment (if applicable).
 #[derive(Clone, Debug)]
 pub struct WebInfo {
-    /// e.g. "#fragment" part of "www.example.com/index.html#fragment".
+    /// Information about the URL.
+    pub location: Location,
+}
+
+/// Information about the URL.
+///
+/// Everything has been percent decoded (`%20` -> ` ` etc).
+#[derive(Clone, Debug)]
+pub struct Location {
+    /// The full URL (`location.href`) without the hash.
+    ///
+    /// Example: `"http://www.example.com:80/index.html?foo=bar"`.
+    pub url: String,
+
+    /// `location.protocol`
+    ///
+    /// Example: `"http:"`.
+    pub protocol: String,
+
+    /// `location.host`
+    ///
+    /// Example: `"example.com:80"`.
+    pub host: String,
+
+    /// `location.hostname`
+    ///
+    /// Example: `"example.com"`.
+    pub hostname: String,
+
+    /// `location.port`
+    ///
+    /// Example: `"80"`.
+    pub port: String,
+
+    /// The "#fragment" part of "www.example.com/index.html?query#fragment".
+    ///
     /// Note that the leading `#` is included in the string.
     /// Also known as "hash-link" or "anchor".
-    pub web_location_hash: String,
+    pub hash: String,
+
+    /// The "query" part of "www.example.com/index.html?query#fragment".
+    ///
+    /// Note that the leading `?` is NOT included in the string.
+    ///
+    /// Use [`Self::web_query_map]` to get the parsed version of it.
+    pub query: String,
+
+    /// The parsed "query" part of "www.example.com/index.html?query#fragment".
+    ///
+    /// "foo=42&bar%20" is parsed as `{"foo": "42",  "bar ": ""}`
+    pub query_map: std::collections::BTreeMap<String, String>,
+
+    /// `location.origin`
+    ///
+    /// Example: `"http://www.example.com:80"`.
+    pub origin: String,
 }
 
 /// Information about the integration passed to the use app each frame.
@@ -379,41 +438,6 @@ pub struct IntegrationInfo {
 
     /// The OS native pixels-per-point
     pub native_pixels_per_point: Option<f32>,
-}
-
-/// How to allocate textures (images) to use in [`egui`].
-pub trait TextureAllocator {
-    /// Allocate a new user texture.
-    ///
-    /// There is no way to change a texture.
-    /// Instead allocate a new texture and free the previous one with [`Self::free`].
-    fn alloc(&self, image: Image) -> egui::TextureId;
-
-    /// Free the given texture.
-    fn free(&self, id: egui::TextureId);
-}
-
-/// A 2D color image in RAM.
-#[derive(Clone, Default)]
-pub struct Image {
-    /// width, height
-    pub size: [usize; 2],
-    /// The pixels, row by row, from top to bottom.
-    pub pixels: Vec<egui::Color32>,
-}
-
-impl Image {
-    /// Create an `Image` from flat RGBA data.
-    /// Panics unless `size[0] * size[1] * 4 == rgba.len()`.
-    /// This is usually what you want to use after having loaded an image.
-    pub fn from_rgba_unmultiplied(size: [usize; 2], rgba: &[u8]) -> Self {
-        assert_eq!(size[0] * size[1] * 4, rgba.len());
-        let pixels = rgba
-            .chunks_exact(4)
-            .map(|p| egui::Color32::from_rgba_unmultiplied(p[0], p[1], p[2], p[3]))
-            .collect();
-        Self { size, pixels }
-    }
 }
 
 /// Abstraction for platform dependent texture reference
@@ -477,8 +501,6 @@ pub const APP_KEY: &str = "app";
 
 /// You only need to look here if you are writing a backend for `epi`.
 pub mod backend {
-    use std::collections::HashMap;
-
     use super::*;
 
     /// How to signal the [`egui`] integration that a repaint is required.
@@ -493,47 +515,12 @@ pub mod backend {
     pub struct FrameData {
         /// Information about the integration.
         pub info: IntegrationInfo,
+
         /// Where the app can issue commands back to the integration.
         pub output: AppOutput,
+
         /// If you need to request a repaint from another thread, clone this and send it to that other thread.
         pub repaint_signal: std::sync::Arc<dyn RepaintSignal>,
-    }
-
-    /// The data needed in order to allocate and free textures/images.
-    #[derive(Default)]
-    #[must_use]
-    pub struct TexAllocationData {
-        /// We allocate texture id linearly.
-        pub(crate) next_id: u64,
-        /// New creations this frame
-        pub creations: HashMap<u64, Image>,
-        /// destructions this frame.
-        pub destructions: Vec<u64>,
-    }
-
-    impl TexAllocationData {
-        /// Should only be used by integrations
-        pub fn take(&mut self) -> Self {
-            let next_id = self.next_id;
-            let ret = std::mem::take(self);
-            self.next_id = next_id;
-            ret
-        }
-
-        /// Allocate a new texture.
-        pub fn alloc(&mut self, image: Image) -> egui::TextureId {
-            let id = self.next_id;
-            self.next_id += 1;
-            self.creations.insert(id, image);
-            egui::TextureId::User(id)
-        }
-
-        /// Free an existing texture.
-        pub fn free(&mut self, id: egui::TextureId) {
-            if let egui::TextureId::User(id) = id {
-                self.destructions.push(id);
-            }
-        }
     }
 
     /// Action that can be taken by the user app.
@@ -555,8 +542,5 @@ pub mod backend {
 
         /// Set to true to drag window while primary mouse button is down.
         pub drag_window: bool,
-
-        /// A way to allocate textures (on integrations that support it).
-        pub tex_allocation_data: TexAllocationData,
     }
 }

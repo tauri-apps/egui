@@ -1,11 +1,11 @@
 //use glutin::platform::windows::EventLoopExtWindows;
 use crate::*;
-use glutin::platform::*;
+use egui_tao::tao;
 
 #[derive(Debug)]
 struct RequestRepaintEvent;
 
-struct GlowRepaintSignal(std::sync::Mutex<glutin::event_loop::EventLoopProxy<RequestRepaintEvent>>);
+struct GlowRepaintSignal(std::sync::Mutex<tao::event_loop::EventLoopProxy<RequestRepaintEvent>>);
 
 impl epi::backend::RepaintSignal for GlowRepaintSignal {
     fn request_repaint(&self) {
@@ -15,8 +15,8 @@ impl epi::backend::RepaintSignal for GlowRepaintSignal {
 
 #[allow(unsafe_code)]
 fn create_display(
-    window_builder: glutin::window::WindowBuilder,
-    event_loop: &glutin::event_loop::EventLoop<RequestRepaintEvent>,
+    window_builder: tao::window::WindowBuilder,
+    event_loop: &tao::event_loop::EventLoop<RequestRepaintEvent>,
 ) -> (
     glutin::WindowedContext<glutin::PossiblyCurrent>,
     glow::Context,
@@ -58,7 +58,7 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
     let window_settings = persistence.load_window_settings();
     let window_builder =
         egui_tao::epi::window_builder(native_options, &window_settings).with_title(app.name());
-    let event_loop = glutin::event_loop::EventLoop::with_user_event();
+    let event_loop = tao::event_loop::EventLoop::with_user_event();
     let (gl_window, gl) = create_display(window_builder, &event_loop);
 
     let repaint_signal = std::sync::Arc::new(GlowRepaintSignal(std::sync::Mutex::new(
@@ -66,10 +66,10 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
     )));
 
     let mut painter = crate::Painter::new(&gl, None, "")
-        .map_err(|error| eprintln!("some OpenGL error occurred {}\n", error))
-        .unwrap();
+        .unwrap_or_else(|error| panic!("some OpenGL error occurred {}\n", error));
     let mut integration = egui_tao::epi::EpiIntegration::new(
         "egui_glow",
+        painter.max_texture_side(),
         gl_window.window(),
         repaint_signal,
         persistence,
@@ -89,13 +89,16 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
 
-            let (needs_repaint, mut tex_allocation_data, shapes) =
-                integration.update(gl_window.window());
-            let clipped_meshes = integration.egui_ctx.tessellate(shapes);
+            let egui::FullOutput {
+                platform_output,
+                needs_repaint,
+                textures_delta,
+                shapes,
+            } = integration.update(gl_window.window());
 
-            for (id, image) in tex_allocation_data.creations {
-                painter.set_texture(&gl, id, &image);
-            }
+            integration.handle_platform_output(gl_window.window(), platform_output);
+
+            let clipped_meshes = integration.egui_ctx.tessellate(shapes);
 
             // paint:
             {
@@ -106,29 +109,25 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
                     gl.clear_color(color[0], color[1], color[2], color[3]);
                     gl.clear(glow::COLOR_BUFFER_BIT);
                 }
-                painter.upload_egui_texture(&gl, &integration.egui_ctx.font_image());
-                painter.paint_meshes(
+                painter.paint_and_update_textures(
                     &gl,
                     gl_window.window().inner_size().into(),
                     integration.egui_ctx.pixels_per_point(),
                     clipped_meshes,
+                    &textures_delta,
                 );
 
                 gl_window.swap_buffers().unwrap();
             }
 
-            for id in tex_allocation_data.destructions.drain(..) {
-                painter.free_texture(id);
-            }
-
             {
                 *control_flow = if integration.should_quit() {
-                    glutin::event_loop::ControlFlow::Exit
+                    tao::event_loop::ControlFlow::Exit
                 } else if needs_repaint {
                     gl_window.window().request_redraw();
-                    glutin::event_loop::ControlFlow::Poll
+                    tao::event_loop::ControlFlow::Poll
                 } else {
-                    glutin::event_loop::ControlFlow::Wait
+                    tao::event_loop::ControlFlow::Wait
                 };
             }
 
@@ -139,30 +138,30 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
             // Platform-dependent event handlers to workaround a winit bug
             // See: https://github.com/rust-windowing/winit/issues/987
             // See: https://github.com/rust-windowing/winit/issues/1619
-            glutin::event::Event::RedrawEventsCleared if cfg!(windows) => redraw(),
-            glutin::event::Event::RedrawRequested(_) if !cfg!(windows) => redraw(),
+            tao::event::Event::RedrawEventsCleared if cfg!(windows) => redraw(),
+            tao::event::Event::RedrawRequested(_) if !cfg!(windows) => redraw(),
 
-            glutin::event::Event::WindowEvent { event, .. } => {
-                if let glutin::event::WindowEvent::Focused(new_focused) = event {
+            tao::event::Event::WindowEvent { event, .. } => {
+                if let tao::event::WindowEvent::Focused(new_focused) = event {
                     is_focused = new_focused;
                 }
 
-                if let glutin::event::WindowEvent::Resized(physical_size) = event {
+                if let tao::event::WindowEvent::Resized(physical_size) = event {
                     gl_window.resize(physical_size);
                 }
 
                 integration.on_event(&event);
                 if integration.should_quit() {
-                    *control_flow = glutin::event_loop::ControlFlow::Exit;
+                    *control_flow = tao::event_loop::ControlFlow::Exit;
                 }
 
                 gl_window.window().request_redraw(); // TODO: ask egui if the events warrants a repaint instead
             }
-            glutin::event::Event::LoopDestroyed => {
+            tao::event::Event::LoopDestroyed => {
                 integration.on_exit(gl_window.window());
                 painter.destroy(&gl);
             }
-            glutin::event::Event::UserEvent(RequestRepaintEvent) => {
+            tao::event::Event::UserEvent(RequestRepaintEvent) => {
                 gl_window.window().request_redraw();
             }
             _ => (),
@@ -174,6 +173,7 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
 #[cfg(target_os = "linux")]
 #[allow(unsafe_code)]
 pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
+    use glutin::platform::ContextTraitExt;
     use gtk::prelude::*;
     let persistence = egui_tao::epi::Persistence::from_app_name(app.name());
     let window_settings = persistence.load_window_settings();
@@ -192,6 +192,7 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
         .unwrap();
     let integration = Rc::new(RefCell::new(egui_tao::epi::EpiIntegration::new(
         "egui_glow",
+        painter.max_texture_side(),
         gl_window.window(),
         repaint_signal,
         persistence,
@@ -211,13 +212,17 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
     area.connect_render(move |_, _| {
         let mut integration = i.borrow_mut();
         let mut painter = p.borrow_mut();
-        let (needs_repaint, mut tex_allocation_data, shapes) =
-            integration.update(gl_window_.window());
-        let clipped_meshes = integration.egui_ctx.tessellate(shapes);
+        //let (needs_repaint, mut tex_allocation_data, shapes) =
+        let egui::FullOutput {
+            platform_output,
+            needs_repaint,
+            textures_delta,
+            shapes,
+        } = integration.update(gl_window_.window());
 
-        for (id, image) in tex_allocation_data.creations {
-            painter.set_texture(&gl_, id, &image);
-        }
+        integration.handle_platform_output(gl_window_.window(), platform_output);
+
+        let clipped_meshes = integration.egui_ctx.tessellate(shapes);
 
         {
             let color = integration.app.clear_color();
@@ -227,17 +232,15 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
                 gl_.clear_color(color[0], color[1], color[2], color[3]);
                 gl_.clear(glow::COLOR_BUFFER_BIT);
             }
-            painter.upload_egui_texture(&gl_, &integration.egui_ctx.font_image());
-            painter.paint_meshes(
+            painter.paint_and_update_textures(
                 &gl_,
                 gl_window_.window().inner_size().into(),
                 integration.egui_ctx.pixels_per_point(),
                 clipped_meshes,
+                &textures_delta,
             );
-        }
 
-        for id in tex_allocation_data.destructions.drain(..) {
-            painter.free_texture(id);
+            //gl_window.swap_buffers().unwrap();
         }
 
         {

@@ -68,7 +68,7 @@ impl super::Demo for CodeExample {
         "🖮 Code Example"
     }
 
-    fn show(&mut self, ctx: &egui::CtxRef, open: &mut bool) {
+    fn show(&mut self, ctx: &egui::Context, open: &mut bool) {
         use super::View;
         egui::Window::new(self.name())
             .open(open)
@@ -82,6 +82,10 @@ impl super::Demo for CodeExample {
 impl super::View for CodeExample {
     fn ui(&mut self, ui: &mut egui::Ui) {
         use crate::syntax_highlighting::code_view_ui;
+
+        ui.vertical_centered(|ui| {
+            ui.add(crate::__egui_github_link_file!());
+        });
 
         code_view_ui(
             ui,
@@ -98,7 +102,8 @@ impl CodeExample {
         );
 
         ui.horizontal(|ui| {
-            let indentation = 8.0 * ui.fonts()[egui::TextStyle::Monospace].glyph_width(' ');
+            let font_id = egui::TextStyle::Monospace.resolve(ui.style());
+            let indentation = 8.0 * ui.fonts().glyph_width(&font_id, ' ');
             let item_spacing = ui.spacing_mut().item_spacing;
             ui.add_space(indentation - item_spacing.x);
 

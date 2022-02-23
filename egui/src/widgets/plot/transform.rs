@@ -120,6 +120,10 @@ impl PlotBounds {
         self.min[0]..=self.max[0]
     }
 
+    pub(crate) fn range_y(&self) -> RangeInclusive<f64> {
+        self.min[1]..=self.max[1]
+    }
+
     pub(crate) fn make_x_symmetrical(&mut self) {
         let x_abs = self.min[0].abs().max(self.max[0].abs());
         self.min[0] = -x_abs;
@@ -176,6 +180,10 @@ impl ScreenTransform {
 
     pub fn bounds(&self) -> &PlotBounds {
         &self.bounds
+    }
+
+    pub fn bounds_mut(&mut self) -> &mut PlotBounds {
+        &mut self.bounds
     }
 
     pub fn translate_bounds(&mut self, mut delta_pos: Vec2) {
@@ -273,13 +281,20 @@ impl ScreenTransform {
         (self.bounds.width() / rw) / (self.bounds.height() / rh)
     }
 
-    pub fn set_aspect(&mut self, aspect: f64) {
-        let epsilon = 1e-5;
+    /// Sets the aspect ratio by either expanding the x-axis or contracting the y-axis.
+    pub fn set_aspect(&mut self, aspect: f64, preserve_y: bool) {
         let current_aspect = self.get_aspect();
-        if current_aspect < aspect - epsilon {
+
+        let epsilon = 1e-5;
+        if (current_aspect - aspect).abs() < epsilon {
+            // Don't make any changes when the aspect is already almost correct.
+            return;
+        }
+
+        if preserve_y {
             self.bounds
                 .expand_x((aspect / current_aspect - 1.0) * self.bounds.width() * 0.5);
-        } else if current_aspect > aspect + epsilon {
+        } else {
             self.bounds
                 .expand_y((current_aspect / aspect - 1.0) * self.bounds.height() * 0.5);
         }

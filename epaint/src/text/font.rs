@@ -1,16 +1,15 @@
 use crate::{
-    mutex::{Mutex, RwLock},
-    text::TextStyle,
+    mutex::{Arc, Mutex, RwLock},
     TextureAtlas,
 };
 use ahash::AHashMap;
 use emath::{vec2, Vec2};
 use std::collections::BTreeSet;
-use std::sync::Arc;
 
 // ----------------------------------------------------------------------------
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct UvRect {
     /// X/Y offset for nice rendering (unit: points).
     pub offset: Vec2,
@@ -58,9 +57,10 @@ impl Default for GlyphInfo {
 /// A specific font with a size.
 /// The interface uses points as the unit for everything.
 pub struct FontImpl {
+    name: String,
     ab_glyph_font: ab_glyph::FontArc,
     /// Maximum character height
-    scale_in_pixels: f32,
+    scale_in_pixels: u32,
     height_in_points: f32,
     // move each character by this much (hack)
     y_offset: f32,
@@ -73,31 +73,28 @@ impl FontImpl {
     pub fn new(
         atlas: Arc<Mutex<TextureAtlas>>,
         pixels_per_point: f32,
+        name: String,
         ab_glyph_font: ab_glyph::FontArc,
-        scale_in_points: f32,
-        y_offset: f32,
+        scale_in_pixels: u32,
+        y_offset_points: f32,
     ) -> FontImpl {
-        assert!(scale_in_points > 0.0);
+        assert!(scale_in_pixels > 0);
         assert!(pixels_per_point > 0.0);
 
-        let scale_in_pixels = pixels_per_point * scale_in_points;
+        let height_in_points = scale_in_pixels as f32 / pixels_per_point;
 
-        // Round to an even number of physical pixels to get even kerning.
-        // See https://github.com/emilk/egui/issues/382
-        let scale_in_pixels = scale_in_pixels.round();
-        let scale_in_points = scale_in_pixels / pixels_per_point;
-
-        let height_in_points = scale_in_points;
-
-        // TODO: use v_metrics for line spacing ?
-        // let v = rusttype_font.v_metrics(Scale::uniform(scale_in_pixels));
-        // let height_in_pixels = v.ascent - v.descent + v.line_gap;
-        // let height_in_points = height_in_pixels / pixels_per_point;
+        // TODO: use these font metrics?
+        // use ab_glyph::ScaleFont as _;
+        // let scaled = ab_glyph_font.as_scaled(scale_in_pixels as f32);
+        // dbg!(scaled.ascent());
+        // dbg!(scaled.descent());
+        // dbg!(scaled.line_gap());
 
         // Round to closest pixel:
-        let y_offset = (y_offset * pixels_per_point).round() / pixels_per_point;
+        let y_offset = (y_offset_points * pixels_per_point).round() / pixels_per_point;
 
         Self {
+            name,
             ab_glyph_font,
             scale_in_pixels,
             height_in_points,
@@ -108,22 +105,32 @@ impl FontImpl {
         }
     }
 
+    fn ignore_character(&self, chr: char) -> bool {
+        if self.name == "emoji-icon-font" {
+            // HACK: https://github.com/emilk/egui/issues/1284 https://github.com/jslegers/emoji-icon-font/issues/18
+            // Don't show the wrong fullwidth capital letters:
+            if 'Ｓ' <= chr && chr <= 'Ｙ' {
+                return true;
+            }
+        }
+
+        matches!(
+            chr,
+            // Strip out a religious symbol with secondary nefarious interpretation:
+            '\u{534d}' | '\u{5350}' |
+
+            // Ignore ubuntu-specific stuff in `Ubuntu-Light.ttf`:
+            '\u{E0FF}' | '\u{EFFD}' | '\u{F0FF}' | '\u{F200}'
+        )
+    }
+
     /// An un-ordered iterator over all supported characters.
     fn characters(&self) -> impl Iterator<Item = char> + '_ {
         use ab_glyph::Font as _;
         self.ab_glyph_font
             .codepoint_ids()
             .map(|(_, chr)| chr)
-            .filter(|chr| {
-                !matches!(
-                    chr,
-                    // Strip out a religious symbol with secondary nefarious interpretation:
-                    '\u{534d}' | '\u{5350}' |
-
-                    // Ignore ubuntu-specific stuff in `Ubuntu-Light.ttf`:
-                    '\u{E0FF}' | '\u{EFFD}' | '\u{F0FF}' | '\u{F200}'
-                )
-            })
+            .filter(|&chr| !self.ignore_character(chr))
     }
 
     /// `\n` will result in `None`
@@ -134,9 +141,9 @@ impl FontImpl {
             }
         }
 
-        // Add new character:
-        use ab_glyph::Font as _;
-        let glyph_id = self.ab_glyph_font.glyph_id(c);
+        if self.ignore_character(c) {
+            return None;
+        }
 
         if c == '\t' {
             if let Some(space) = self.glyph_info(' ') {
@@ -149,6 +156,10 @@ impl FontImpl {
             }
         }
 
+        // Add new character:
+        use ab_glyph::Font as _;
+        let glyph_id = self.ab_glyph_font.glyph_id(c);
+
         if glyph_id.0 == 0 {
             if invisible_char(c) {
                 // hack
@@ -156,14 +167,14 @@ impl FontImpl {
                 self.glyph_info_cache.write().insert(c, glyph_info);
                 Some(glyph_info)
             } else {
-                None
+                None // unsupported character
             }
         } else {
             let glyph_info = allocate_glyph(
                 &mut self.atlas.lock(),
                 &self.ab_glyph_font,
                 glyph_id,
-                self.scale_in_pixels,
+                self.scale_in_pixels as f32,
                 self.y_offset,
                 self.pixels_per_point,
             );
@@ -181,7 +192,7 @@ impl FontImpl {
     ) -> f32 {
         use ab_glyph::{Font as _, ScaleFont};
         self.ab_glyph_font
-            .as_scaled(self.scale_in_pixels)
+            .as_scaled(self.scale_in_pixels as f32)
             .kern(last_glyph_id, glyph_id)
             / self.pixels_per_point
     }
@@ -203,23 +214,21 @@ type FontIndex = usize;
 // TODO: rename?
 /// Wrapper over multiple `FontImpl` (e.g. a primary + fallbacks for emojis)
 pub struct Font {
-    text_style: TextStyle,
     fonts: Vec<Arc<FontImpl>>,
     /// Lazily calculated.
-    characters: RwLock<Option<std::collections::BTreeSet<char>>>,
+    characters: Option<std::collections::BTreeSet<char>>,
     replacement_glyph: (FontIndex, GlyphInfo),
     pixels_per_point: f32,
     row_height: f32,
-    glyph_info_cache: RwLock<AHashMap<char, (FontIndex, GlyphInfo)>>,
+    glyph_info_cache: AHashMap<char, (FontIndex, GlyphInfo)>,
 }
 
 impl Font {
-    pub fn new(text_style: TextStyle, fonts: Vec<Arc<FontImpl>>) -> Self {
+    pub fn new(fonts: Vec<Arc<FontImpl>>) -> Self {
         if fonts.is_empty() {
             return Self {
-                text_style,
                 fonts,
-                characters: RwLock::new(None),
+                characters: None,
                 replacement_glyph: Default::default(),
                 pixels_per_point: 1.0,
                 row_height: 0.0,
@@ -231,9 +240,8 @@ impl Font {
         let row_height = fonts[0].row_height();
 
         let mut slf = Self {
-            text_style,
             fonts,
-            characters: RwLock::new(None),
+            characters: None,
             replacement_glyph: Default::default(),
             pixels_per_point,
             row_height,
@@ -254,33 +262,29 @@ impl Font {
             });
         slf.replacement_glyph = replacement_glyph;
 
+        slf
+    }
+
+    pub fn preload_common_characters(&mut self) {
         // Preload the printable ASCII characters [32, 126] (which excludes control codes):
         const FIRST_ASCII: usize = 32; // 32 == space
         const LAST_ASCII: usize = 126;
         for c in (FIRST_ASCII..=LAST_ASCII).map(|c| c as u8 as char) {
-            slf.glyph_info(c);
+            self.glyph_info(c);
         }
-        slf.glyph_info('°');
-        slf.glyph_info(crate::text::PASSWORD_REPLACEMENT_CHAR); // password replacement character
-
-        slf
+        self.glyph_info('°');
+        self.glyph_info(crate::text::PASSWORD_REPLACEMENT_CHAR);
     }
 
     /// All supported characters
-    pub fn characters(&self) -> BTreeSet<char> {
-        if self.characters.read().is_none() {
+    pub fn characters(&mut self) -> &BTreeSet<char> {
+        self.characters.get_or_insert_with(|| {
             let mut characters = BTreeSet::new();
             for font in &self.fonts {
                 characters.extend(font.characters());
             }
-            self.characters.write().replace(characters);
-        }
-        self.characters.read().clone().unwrap()
-    }
-
-    #[inline(always)]
-    pub fn text_style(&self) -> TextStyle {
-        self.text_style
+            characters
+        })
     }
 
     #[inline(always)]
@@ -296,35 +300,30 @@ impl Font {
 
     pub fn uv_rect(&self, c: char) -> UvRect {
         self.glyph_info_cache
-            .read()
             .get(&c)
             .map(|gi| gi.1.uv_rect)
             .unwrap_or_default()
     }
 
     /// Width of this character in points.
-    pub fn glyph_width(&self, c: char) -> f32 {
+    pub fn glyph_width(&mut self, c: char) -> f32 {
         self.glyph_info(c).1.advance_width
     }
 
     /// `\n` will (intentionally) show up as the replacement character.
-    fn glyph_info(&self, c: char) -> (FontIndex, GlyphInfo) {
-        {
-            if let Some(font_index_glyph_info) = self.glyph_info_cache.read().get(&c) {
-                return *font_index_glyph_info;
-            }
+    fn glyph_info(&mut self, c: char) -> (FontIndex, GlyphInfo) {
+        if let Some(font_index_glyph_info) = self.glyph_info_cache.get(&c) {
+            return *font_index_glyph_info;
         }
 
         let font_index_glyph_info = self.glyph_info_no_cache_or_fallback(c);
         let font_index_glyph_info = font_index_glyph_info.unwrap_or(self.replacement_glyph);
-        self.glyph_info_cache
-            .write()
-            .insert(c, font_index_glyph_info);
+        self.glyph_info_cache.insert(c, font_index_glyph_info);
         font_index_glyph_info
     }
 
     #[inline]
-    pub(crate) fn glyph_info_and_font_impl(&self, c: char) -> (Option<&FontImpl>, GlyphInfo) {
+    pub(crate) fn glyph_info_and_font_impl(&mut self, c: char) -> (Option<&FontImpl>, GlyphInfo) {
         if self.fonts.is_empty() {
             return (None, self.replacement_glyph.1);
         }
@@ -333,12 +332,10 @@ impl Font {
         (Some(font_impl), glyph_info)
     }
 
-    fn glyph_info_no_cache_or_fallback(&self, c: char) -> Option<(FontIndex, GlyphInfo)> {
+    fn glyph_info_no_cache_or_fallback(&mut self, c: char) -> Option<(FontIndex, GlyphInfo)> {
         for (font_index, font_impl) in self.fonts.iter().enumerate() {
             if let Some(glyph_info) = font_impl.glyph_info(c) {
-                self.glyph_info_cache
-                    .write()
-                    .insert(c, (font_index, glyph_info));
+                self.glyph_info_cache.insert(c, (font_index, glyph_info));
                 return Some((font_index, glyph_info));
             }
         }
@@ -375,18 +372,16 @@ fn allocate_glyph(
         if glyph_width == 0 || glyph_height == 0 {
             UvRect::default()
         } else {
-            let glyph_pos = atlas.allocate((glyph_width, glyph_height));
-
-            let texture = atlas.image_mut();
+            let (glyph_pos, image) = atlas.allocate((glyph_width, glyph_height));
             glyph.draw(|x, y, v| {
                 if v > 0.0 {
                     let px = glyph_pos.0 + x as usize;
                     let py = glyph_pos.1 + y as usize;
-                    texture[(px, py)] = (v * 255.0).round() as u8;
+                    image[(px, py)] = fast_round(v * 255.0);
                 }
             });
 
-            let offset_in_pixels = vec2(bb.min.x as f32, scale_in_pixels as f32 + bb.min.y as f32);
+            let offset_in_pixels = vec2(bb.min.x as f32, scale_in_pixels + bb.min.y as f32);
             let offset = offset_in_pixels / pixels_per_point + y_offset * Vec2::Y;
             UvRect {
                 offset,
@@ -409,4 +404,8 @@ fn allocate_glyph(
         advance_width: advance_width_in_points,
         uv_rect,
     }
+}
+
+fn fast_round(r: f32) -> u8 {
+    (r + 0.5).floor() as _ // rust does a saturating cast since 1.45
 }

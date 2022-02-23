@@ -1,6 +1,6 @@
 //! `egui`:  an easy-to-use GUI in pure Rust!
 //!
-//! Try the live web demo: <https://emilk.github.io/egui/index.html>. Read more about egui at <https://github.com/emilk/egui>.
+//! Try the live web demo: <https://www.egui.rs/#demo>. Read more about egui at <https://github.com/emilk/egui>.
 //!
 //! `egui` is in heavy development, with each new version having breaking changes.
 //! You need to have rust 1.56.0 or later to use `egui`.
@@ -8,13 +8,13 @@
 //! To quickly get started with egui, you can take a look at [`eframe_template`](https://github.com/emilk/eframe_template)
 //! which uses [`eframe`](https://docs.rs/eframe).
 //!
-//! To create a GUI using egui you first need a [`CtxRef`] (by convention referred to by `ctx`).
+//! To create a GUI using egui you first need a [`Context`] (by convention referred to by `ctx`).
 //! Then you add a [`Window`] or a [`SidePanel`] to get a [`Ui`], which is what you'll be using to add all the buttons and labels that you need.
 //!
 //!
 //! # Using egui
 //!
-//! To see what is possible to build with egui you can check out the online demo at <https://emilk.github.io/egui/#demo>.
+//! To see what is possible to build with egui you can check out the online demo at <https://www.egui.rs/#demo>.
 //!
 //! If you like the "learning by doing" approach, clone <https://github.com/emilk/eframe_template> and get started using egui right away.
 //!
@@ -58,7 +58,7 @@
 //!
 //! ### Quick start
 //!
-//! ``` rust
+//! ```
 //! # egui::__run_test_ui(|ui| {
 //! # let mut my_string = String::new();
 //! # let mut my_boolean = true;
@@ -110,16 +110,16 @@
 //! To write your own integration for egui you need to do this:
 //!
 //! ``` no_run
-//! # fn handle_output(_: egui::Output) {}
-//! # fn paint(_: Vec<egui::ClippedMesh>) {}
+//! # fn handle_platform_output(_: egui::PlatformOutput) {}
 //! # fn gather_input() -> egui::RawInput { egui::RawInput::default() }
-//! let mut ctx = egui::CtxRef::default();
+//! # fn paint(textures_detla: egui::TexturesDelta, _: Vec<egui::ClippedMesh>) {}
+//! let mut ctx = egui::Context::default();
 //!
 //! // Game loop:
 //! loop {
 //!     let raw_input: egui::RawInput = gather_input();
 //!
-//!     let (output, shapes) = ctx.run(raw_input, |ctx| {
+//!     let full_output = ctx.run(raw_input, |ctx| {
 //!         egui::CentralPanel::default().show(&ctx, |ui| {
 //!             ui.label("Hello world!");
 //!             if ui.button("Click me").clicked() {
@@ -127,10 +127,9 @@
 //!             }
 //!         });
 //!     });
-//!
-//!     let clipped_meshes = ctx.tessellate(shapes); // create triangles to paint
-//!     handle_output(output);
-//!     paint(clipped_meshes);
+//!     handle_platform_output(full_output.platform_output);
+//!     let clipped_meshes = ctx.tessellate(full_output.shapes); // create triangles to paint
+//!     paint(full_output.textures_delta, clipped_meshes);
 //! }
 //! ```
 //!
@@ -214,11 +213,11 @@
 //! when you release the panel/window shrinks again.
 //! This is an artifact of immediate mode, and here are some alternatives on how to avoid it:
 //!
-//! 1. Turn of resizing with [`Window::resizable`], [`SidePanel::resizable`], [`TopBottomPanel::resizable`].
+//! 1. Turn off resizing with [`Window::resizable`], [`SidePanel::resizable`], [`TopBottomPanel::resizable`].
 //! 2. Wrap your panel contents in a [`ScrollArea`], or use [`Window::vscroll`] and [`Window::hscroll`].
 //! 3. Use a justified layout:
 //!
-//! ``` rust
+//! ```
 //! # egui::__run_test_ui(|ui| {
 //! ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui| {
 //!     ui.button("I am becoming wider as needed");
@@ -228,7 +227,7 @@
 //!
 //! 4. Fill in extra space with emptiness:
 //!
-//! ``` rust
+//! ```
 //! # egui::__run_test_ui(|ui| {
 //! ui.allocate_space(ui.available_size()); // put this LAST in your panel/window code
 //! # });
@@ -364,7 +363,7 @@ mod frame_state;
 pub(crate) mod grid;
 mod id;
 mod input_state;
-mod introspection;
+pub mod introspection;
 pub mod layers;
 mod layout;
 mod memory;
@@ -385,23 +384,25 @@ pub use epaint::emath;
 pub use emath::{lerp, pos2, remap, remap_clamp, vec2, Align, Align2, NumExt, Pos2, Rect, Vec2};
 pub use epaint::{
     color, mutex,
-    text::{FontData, FontDefinitions, FontFamily, TextStyle},
-    ClippedMesh, Color32, FontImage, Rgba, Shape, Stroke, TextureId,
+    text::{FontData, FontDefinitions, FontFamily, FontId, FontTweak},
+    textures::TexturesDelta,
+    AlphaImage, ClippedMesh, Color32, ColorImage, ImageData, Mesh, Rgba, Rounding, Shape, Stroke,
+    TextureHandle, TextureId,
 };
 
 pub mod text {
     pub use epaint::text::{
         FontData, FontDefinitions, FontFamily, Fonts, Galley, LayoutJob, LayoutSection, TextFormat,
-        TextStyle, TAB_SIZE,
+        TAB_SIZE,
     };
 }
 
 pub use {
     containers::*,
-    context::{Context, CtxRef},
+    context::Context,
     data::{
         input::*,
-        output::{self, CursorIcon, Output, WidgetInfo},
+        output::{self, CursorIcon, FullOutput, PlatformOutput, WidgetInfo},
     },
     grid::Grid,
     id::{Id, IdMap},
@@ -412,7 +413,7 @@ pub use {
     painter::Painter,
     response::{InnerResponse, Response},
     sense::Sense,
-    style::{Style, Visuals},
+    style::{FontSelection, Style, TextStyle, Visuals},
     text::{Galley, TextFormat},
     ui::Ui,
     widget_text::{RichText, WidgetText},
@@ -509,7 +510,7 @@ macro_rules! egui_assert {
 
 // ----------------------------------------------------------------------------
 
-/// egui supports around 1216 emojis in total.
+/// The default egui fonts supports around 1216 emojis in total.
 /// Here are some of the most useful:
 /// ∞⊗⎗⎘⎙⏏⏴⏵⏶⏷
 /// ⏩⏪⏭⏮⏸⏹⏺■▶📾🔀🔁🔃
@@ -524,7 +525,7 @@ macro_rules! egui_assert {
 ///
 /// NOTE: In egui all emojis are monochrome!
 ///
-/// You can explore them all in the Font Book in [the online demo](https://emilk.github.io/egui/).
+/// You can explore them all in the Font Book in [the online demo](https://www.egui.rs/#demo).
 ///
 /// In addition, egui supports a few special emojis that are not part of the unicode standard.
 /// This module contains some of them:
@@ -574,8 +575,8 @@ pub enum WidgetType {
 // ----------------------------------------------------------------------------
 
 /// For use in tests; especially doctests.
-pub fn __run_test_ctx(mut run_ui: impl FnMut(&CtxRef)) {
-    let mut ctx = CtxRef::default();
+pub fn __run_test_ctx(mut run_ui: impl FnMut(&Context)) {
+    let ctx = Context::default();
     let _ = ctx.run(Default::default(), |ctx| {
         run_ui(ctx);
     });
@@ -583,7 +584,7 @@ pub fn __run_test_ctx(mut run_ui: impl FnMut(&CtxRef)) {
 
 /// For use in tests; especially doctests.
 pub fn __run_test_ui(mut add_contents: impl FnMut(&mut Ui)) {
-    let mut ctx = CtxRef::default();
+    let ctx = Context::default();
     let _ = ctx.run(Default::default(), |ctx| {
         crate::CentralPanel::default().show(ctx, |ui| {
             add_contents(ui);

@@ -2,8 +2,123 @@
 
 #![allow(clippy::if_same_then_else)]
 
-use crate::{color::*, emath::*, Response, RichText, WidgetText};
-use epaint::{Shadow, Stroke, TextStyle};
+use crate::{color::*, emath::*, FontFamily, FontId, Response, RichText, WidgetText};
+use epaint::{mutex::Arc, Rounding, Shadow, Stroke};
+use std::collections::BTreeMap;
+
+// ----------------------------------------------------------------------------
+
+/// Alias for a [`FontId`] (font of a certain size).
+///
+/// The font is found via look-up in [`Style::text_styles`].
+/// You can use [`TextStyle::resolve`] to do this lookup.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+pub enum TextStyle {
+    /// Used when small text is needed.
+    Small,
+
+    /// Normal labels. Easily readable, doesn't take up too much space.
+    Body,
+
+    /// Same size as [`Self::Body]`, but used when monospace is important (for aligning number, code snippets, etc).
+    Monospace,
+
+    /// Buttons. Maybe slightly bigger than [`Self::Body]`.
+    /// Signifies that he item is interactive.
+    Button,
+
+    /// Heading. Probably larger than [`Self::Body]`.
+    Heading,
+
+    /// A user-chosen style, found in [`Style::text_styles`].
+    /// ```
+    /// egui::TextStyle::Name("footing".into());
+    /// ````
+    Name(Arc<str>),
+}
+
+impl std::fmt::Display for TextStyle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Small => "Small".fmt(f),
+            Self::Body => "Body".fmt(f),
+            Self::Monospace => "Monospace".fmt(f),
+            Self::Button => "Button".fmt(f),
+            Self::Heading => "Heading".fmt(f),
+            Self::Name(name) => (*name).fmt(f),
+        }
+    }
+}
+
+impl TextStyle {
+    /// Look up this [`TextStyle`] in [`Style::text_styles`].
+    pub fn resolve(&self, style: &Style) -> FontId {
+        style.text_styles.get(self).cloned().unwrap_or_else(|| {
+            panic!(
+                "Failed to find {:?} in Style::text_styles. Available styles:\n{:#?}",
+                self,
+                style.text_styles()
+            )
+        })
+    }
+}
+
+// ----------------------------------------------------------------------------
+
+/// A way to select [`FontId`], either by picking one directly or by using a [`TextStyle`].
+pub enum FontSelection {
+    /// Default text style - will use [`TextStyle::Body`], unless
+    /// [`Style::override_font_id`] or [`Style::override_text_style`] is set.
+    Default,
+
+    /// Directly select size and font family
+    FontId(FontId),
+
+    /// Use a [`TextStyle`] to look up the [`FontId`] in [`Style::text_styles`].
+    Style(TextStyle),
+}
+
+impl Default for FontSelection {
+    #[inline]
+    fn default() -> Self {
+        Self::Default
+    }
+}
+
+impl FontSelection {
+    pub fn resolve(self, style: &Style) -> FontId {
+        match self {
+            Self::Default => {
+                if let Some(override_font_id) = &style.override_font_id {
+                    override_font_id.clone()
+                } else if let Some(text_style) = &style.override_text_style {
+                    text_style.resolve(style)
+                } else {
+                    TextStyle::Body.resolve(style)
+                }
+            }
+            Self::FontId(font_id) => font_id,
+            Self::Style(text_style) => text_style.resolve(style),
+        }
+    }
+}
+
+impl From<FontId> for FontSelection {
+    #[inline(always)]
+    fn from(font_id: FontId) -> Self {
+        Self::FontId(font_id)
+    }
+}
+
+impl From<TextStyle> for FontSelection {
+    #[inline(always)]
+    fn from(text_style: TextStyle) -> Self {
+        Self::Style(text_style)
+    }
+}
+
+// ----------------------------------------------------------------------------
 
 /// Specifies the look and feel of egui.
 ///
@@ -15,14 +130,22 @@ use epaint::{Shadow, Stroke, TextStyle};
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[cfg_attr(feature = "serde", serde(default))]
 pub struct Style {
-    /// Default `TextStyle` for normal text (i.e. for `Label` and `TextEdit`).
-    pub body_text_style: TextStyle,
-
     /// If set this will change the default [`TextStyle`] for all widgets.
     ///
     /// On most widgets you can also set an explicit text style,
     /// which will take precedence over this.
     pub override_text_style: Option<TextStyle>,
+
+    /// If set this will change the font family and size for all widgets.
+    ///
+    /// On most widgets you can also set an explicit text style,
+    /// which will take precedence over this.
+    pub override_font_id: Option<FontId>,
+
+    /// The [`FontFamily`] and size you want to use for a specific [`TextStyle`].
+    ///
+    /// The most convenient way to look something up in this is to use [`TextStyle::resolve`].
+    pub text_styles: BTreeMap<TextStyle, FontId>,
 
     /// If set, labels buttons wtc will use this to determine whether or not
     /// to wrap the text at the right edge of the `Ui` they are in.
@@ -77,6 +200,11 @@ impl Style {
     pub fn noninteractive(&self) -> &WidgetVisuals {
         &self.visuals.widgets.noninteractive
     }
+
+    /// All known text styles.
+    pub fn text_styles(&self) -> Vec<TextStyle> {
+        self.text_styles.keys().cloned().collect()
+    }
 }
 
 /// Controls the sizes and distances between widgets.
@@ -92,8 +220,8 @@ pub struct Spacing {
     /// widgets `A` and `B` you need to change `item_spacing` before adding `A`.
     pub item_spacing: Vec2,
 
-    /// Horizontal and vertical padding within a window frame.
-    pub window_padding: Vec2,
+    /// Horizontal and vertical margins within a window frame.
+    pub window_margin: Margin,
 
     /// Button size is text size plus this on each side
     pub button_padding: Vec2,
@@ -149,6 +277,49 @@ impl Spacing {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+pub struct Margin {
+    pub left: f32,
+    pub right: f32,
+    pub top: f32,
+    pub bottom: f32,
+}
+
+impl Margin {
+    #[inline]
+    pub fn same(margin: f32) -> Self {
+        Self {
+            left: margin,
+            right: margin,
+            top: margin,
+            bottom: margin,
+        }
+    }
+
+    /// Margins with the same size on opposing sides
+    #[inline]
+    pub fn symmetric(x: f32, y: f32) -> Self {
+        Self {
+            left: x,
+            right: x,
+            top: y,
+            bottom: y,
+        }
+    }
+
+    /// Total margins on both sides
+    pub fn sum(&self) -> Vec2 {
+        Vec2::new(self.left + self.right, self.top + self.bottom)
+    }
+}
+
+impl From<Vec2> for Margin {
+    fn from(v: Vec2) -> Self {
+        Self::symmetric(v.x, v.y)
+    }
+}
+
 /// How and when interaction happens.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
@@ -187,10 +358,10 @@ pub struct Visuals {
     ///
     /// If `text_color` is `None` (default), then the text color will be the same as the
     /// foreground stroke color (`WidgetVisuals::fg_stroke`)
-    /// and will depend on wether or not the widget is being interacted with.
+    /// and will depend on whether or not the widget is being interacted with.
     ///
     /// In the future we may instead modulate
-    /// the `text_color` based on wether or not it is interacted with
+    /// the `text_color` based on whether or not it is interacted with
     /// so that `visuals.text_color` is always used,
     /// but its alpha may be different based on whether or not
     /// it is disabled, non-interactive, hovered etc.
@@ -216,7 +387,7 @@ pub struct Visuals {
     /// Background color behind code-styled monospaced labels.
     pub code_bg_color: Color32,
 
-    pub window_corner_radius: f32,
+    pub window_rounding: Rounding,
     pub window_shadow: Shadow,
 
     pub popup_shadow: Shadow,
@@ -257,6 +428,7 @@ impl Visuals {
         self.widgets.active.text_color()
     }
 
+    /// Window background color.
     #[inline(always)]
     pub fn window_fill(&self) -> Color32 {
         self.widgets.noninteractive.bg_fill
@@ -324,7 +496,7 @@ pub struct WidgetVisuals {
     pub bg_stroke: Stroke,
 
     /// Button frames etc.
-    pub corner_radius: f32,
+    pub rounding: Rounding,
 
     /// Stroke and text color of the interactive part of a component (button text, slider grab, check-mark, …).
     pub fg_stroke: Stroke,
@@ -355,11 +527,35 @@ pub struct DebugOptions {
 
 // ----------------------------------------------------------------------------
 
+/// The default text styles of the default egui theme.
+pub fn default_text_styles() -> BTreeMap<TextStyle, FontId> {
+    let mut text_styles = BTreeMap::new();
+    text_styles.insert(
+        TextStyle::Small,
+        FontId::new(10.0, FontFamily::Proportional),
+    );
+    text_styles.insert(TextStyle::Body, FontId::new(14.0, FontFamily::Proportional));
+    text_styles.insert(
+        TextStyle::Button,
+        FontId::new(14.0, FontFamily::Proportional),
+    );
+    text_styles.insert(
+        TextStyle::Heading,
+        FontId::new(20.0, FontFamily::Proportional),
+    );
+    text_styles.insert(
+        TextStyle::Monospace,
+        FontId::new(14.0, FontFamily::Monospace),
+    );
+    text_styles
+}
+
 impl Default for Style {
     fn default() -> Self {
         Self {
-            body_text_style: TextStyle::Body,
+            override_font_id: None,
             override_text_style: None,
+            text_styles: default_text_styles(),
             wrap: None,
             spacing: Spacing::default(),
             interaction: Interaction::default(),
@@ -375,7 +571,7 @@ impl Default for Spacing {
     fn default() -> Self {
         Self {
             item_spacing: vec2(8.0, 3.0),
-            window_padding: Vec2::splat(6.0),
+            window_margin: Margin::same(6.0),
             button_padding: vec2(4.0, 1.0),
             indent: 18.0, // match checkbox/radio-button with `button_padding.x + icon_width + icon_spacing`
             interact_size: vec2(40.0, 18.0),
@@ -411,9 +607,9 @@ impl Visuals {
             selection: Selection::default(),
             hyperlink_color: Color32::from_rgb(90, 170, 255),
             faint_bg_color: Color32::from_gray(24),
-            extreme_bg_color: Color32::from_gray(10),
+            extreme_bg_color: Color32::from_gray(10), // e.g. TextEdit background
             code_bg_color: Color32::from_gray(64),
-            window_corner_radius: 6.0,
+            window_rounding: Rounding::same(6.0),
             window_shadow: Shadow::big_dark(),
             popup_shadow: Shadow::small_dark(),
             resize_corner_size: 12.0,
@@ -432,9 +628,9 @@ impl Visuals {
             widgets: Widgets::light(),
             selection: Selection::light(),
             hyperlink_color: Color32::from_rgb(0, 155, 255),
-            faint_bg_color: Color32::from_gray(240),
-            extreme_bg_color: Color32::from_gray(250),
-            code_bg_color: Color32::from_gray(200),
+            faint_bg_color: Color32::from_gray(245),
+            extreme_bg_color: Color32::from_gray(255), // e.g. TextEdit background
+            code_bg_color: Color32::from_gray(230),
             window_shadow: Shadow::big_light(),
             popup_shadow: Shadow::small_light(),
             ..Self::dark()
@@ -476,35 +672,35 @@ impl Widgets {
                 bg_fill: Color32::from_gray(27), // window background
                 bg_stroke: Stroke::new(1.0, Color32::from_gray(60)), // separators, indentation lines, windows outlines
                 fg_stroke: Stroke::new(1.0, Color32::from_gray(140)), // normal text color
-                corner_radius: 2.0,
+                rounding: Rounding::same(2.0),
                 expansion: 0.0,
             },
             inactive: WidgetVisuals {
                 bg_fill: Color32::from_gray(60), // button background
                 bg_stroke: Default::default(),
                 fg_stroke: Stroke::new(1.0, Color32::from_gray(180)), // button text
-                corner_radius: 2.0,
+                rounding: Rounding::same(2.0),
                 expansion: 0.0,
             },
             hovered: WidgetVisuals {
                 bg_fill: Color32::from_gray(70),
                 bg_stroke: Stroke::new(1.0, Color32::from_gray(150)), // e.g. hover over window edge or button
                 fg_stroke: Stroke::new(1.5, Color32::from_gray(240)),
-                corner_radius: 3.0,
+                rounding: Rounding::same(3.0),
                 expansion: 1.0,
             },
             active: WidgetVisuals {
                 bg_fill: Color32::from_gray(55),
                 bg_stroke: Stroke::new(1.0, Color32::WHITE),
                 fg_stroke: Stroke::new(2.0, Color32::WHITE),
-                corner_radius: 2.0,
+                rounding: Rounding::same(2.0),
                 expansion: 1.0,
             },
             open: WidgetVisuals {
                 bg_fill: Color32::from_gray(27),
                 bg_stroke: Stroke::new(1.0, Color32::from_gray(60)),
                 fg_stroke: Stroke::new(1.0, Color32::from_gray(210)),
-                corner_radius: 2.0,
+                rounding: Rounding::same(2.0),
                 expansion: 0.0,
             },
         }
@@ -513,38 +709,38 @@ impl Widgets {
     pub fn light() -> Self {
         Self {
             noninteractive: WidgetVisuals {
-                bg_fill: Color32::from_gray(235), // window background
+                bg_fill: Color32::from_gray(248), // window background - should be distinct from TextEdit background
                 bg_stroke: Stroke::new(1.0, Color32::from_gray(190)), // separators, indentation lines, windows outlines
-                fg_stroke: Stroke::new(1.0, Color32::from_gray(100)), // normal text color
-                corner_radius: 2.0,
+                fg_stroke: Stroke::new(1.0, Color32::from_gray(80)),  // normal text color
+                rounding: Rounding::same(2.0),
                 expansion: 0.0,
             },
             inactive: WidgetVisuals {
-                bg_fill: Color32::from_gray(215), // button background
+                bg_fill: Color32::from_gray(230), // button background
                 bg_stroke: Default::default(),
-                fg_stroke: Stroke::new(1.0, Color32::from_gray(80)), // button text
-                corner_radius: 2.0,
+                fg_stroke: Stroke::new(1.0, Color32::from_gray(60)), // button text
+                rounding: Rounding::same(2.0),
                 expansion: 0.0,
             },
             hovered: WidgetVisuals {
-                bg_fill: Color32::from_gray(210),
+                bg_fill: Color32::from_gray(220),
                 bg_stroke: Stroke::new(1.0, Color32::from_gray(105)), // e.g. hover over window edge or button
                 fg_stroke: Stroke::new(1.5, Color32::BLACK),
-                corner_radius: 3.0,
+                rounding: Rounding::same(3.0),
                 expansion: 1.0,
             },
             active: WidgetVisuals {
                 bg_fill: Color32::from_gray(165),
                 bg_stroke: Stroke::new(1.0, Color32::BLACK),
                 fg_stroke: Stroke::new(2.0, Color32::BLACK),
-                corner_radius: 2.0,
+                rounding: Rounding::same(2.0),
                 expansion: 1.0,
             },
             open: WidgetVisuals {
                 bg_fill: Color32::from_gray(220),
                 bg_stroke: Stroke::new(1.0, Color32::from_gray(160)),
                 fg_stroke: Stroke::new(1.0, Color32::BLACK),
-                corner_radius: 2.0,
+                rounding: Rounding::same(2.0),
                 expansion: 0.0,
             },
         }
@@ -564,8 +760,9 @@ use crate::{widgets::*, Ui};
 impl Style {
     pub fn ui(&mut self, ui: &mut crate::Ui) {
         let Self {
-            body_text_style,
+            override_font_id,
             override_text_style,
+            text_styles,
             wrap: _,
             spacing,
             interaction,
@@ -578,11 +775,14 @@ impl Style {
         visuals.light_dark_radio_buttons(ui);
 
         crate::Grid::new("_options").show(ui, |ui| {
-            ui.label("Default body text style:");
+            ui.label("Override font id:");
             ui.horizontal(|ui| {
-                for &style in &[TextStyle::Body, TextStyle::Monospace] {
-                    let text = crate::RichText::new(format!("{:?}", style)).text_style(style);
-                    ui.radio_value(body_text_style, style, text);
+                ui.radio_value(override_font_id, None, "None");
+                if ui.radio(override_font_id.is_some(), "override").clicked() {
+                    *override_font_id = Some(FontId::default());
+                }
+                if let Some(override_font_id) = override_font_id {
+                    crate::introspection::font_id_ui(ui, override_font_id);
                 }
             });
             ui.end_row();
@@ -591,12 +791,14 @@ impl Style {
             crate::ComboBox::from_id_source("Override text style")
                 .selected_text(match override_text_style {
                     None => "None".to_owned(),
-                    Some(override_text_style) => format!("{:?}", override_text_style),
+                    Some(override_text_style) => override_text_style.to_string(),
                 })
                 .show_ui(ui, |ui| {
                     ui.selectable_value(override_text_style, None, "None");
-                    for style in TextStyle::all() {
-                        let text = crate::RichText::new(format!("{:?}", style)).text_style(style);
+                    let all_text_styles = ui.style().text_styles();
+                    for style in all_text_styles {
+                        let text =
+                            crate::RichText::new(style.to_string()).text_style(style.clone());
                         ui.selectable_value(override_text_style, Some(style), text);
                     }
                 });
@@ -611,6 +813,7 @@ impl Style {
             ui.end_row();
         });
 
+        ui.collapsing("🔠 Text Styles", |ui| text_styles_ui(ui, text_styles));
         ui.collapsing("📏 Spacing", |ui| spacing.ui(ui));
         ui.collapsing("☝ Interaction", |ui| interaction.ui(ui));
         ui.collapsing("🎨 Visuals", |ui| visuals.ui(ui));
@@ -625,11 +828,25 @@ impl Style {
     }
 }
 
+fn text_styles_ui(ui: &mut Ui, text_styles: &mut BTreeMap<TextStyle, FontId>) -> Response {
+    ui.vertical(|ui| {
+        crate::Grid::new("text_styles").show(ui, |ui| {
+            for (text_style, font_id) in text_styles.iter_mut() {
+                ui.label(RichText::new(text_style.to_string()).font(font_id.clone()));
+                crate::introspection::font_id_ui(ui, font_id);
+                ui.end_row();
+            }
+        });
+        crate::reset_button_with(ui, text_styles, default_text_styles());
+    })
+    .response
+}
+
 impl Spacing {
     pub fn ui(&mut self, ui: &mut crate::Ui) {
         let Self {
             item_spacing,
-            window_padding,
+            window_margin,
             button_padding,
             indent,
             interact_size,
@@ -644,7 +861,37 @@ impl Spacing {
         } = self;
 
         ui.add(slider_vec2(item_spacing, 0.0..=20.0, "Item spacing"));
-        ui.add(slider_vec2(window_padding, 0.0..=20.0, "Window padding"));
+
+        let margin_range = 0.0..=20.0;
+        ui.horizontal(|ui| {
+            ui.add(
+                DragValue::new(&mut window_margin.left)
+                    .clamp_range(margin_range.clone())
+                    .prefix("left: "),
+            );
+            ui.add(
+                DragValue::new(&mut window_margin.right)
+                    .clamp_range(margin_range.clone())
+                    .prefix("right: "),
+            );
+
+            ui.label("Window margins x");
+        });
+
+        ui.horizontal(|ui| {
+            ui.add(
+                DragValue::new(&mut window_margin.top)
+                    .clamp_range(margin_range.clone())
+                    .prefix("top: "),
+            );
+            ui.add(
+                DragValue::new(&mut window_margin.bottom)
+                    .clamp_range(margin_range)
+                    .prefix("bottom: "),
+            );
+            ui.label("Window margins y");
+        });
+
         ui.add(slider_vec2(button_padding, 0.0..=20.0, "Button padding"));
         ui.add(slider_vec2(interact_size, 4.0..=60.0, "Interact size"))
             .on_hover_text("Minimum size of an interactive widget");
@@ -759,7 +1006,7 @@ impl Selection {
     pub fn ui(&mut self, ui: &mut crate::Ui) {
         let Self { bg_fill, stroke } = self;
         ui.label("Selectable labels");
-        ui_color(ui, bg_fill, "bg_fill");
+        ui_color(ui, bg_fill, "background fill");
         stroke_ui(ui, stroke, "stroke");
     }
 }
@@ -769,14 +1016,16 @@ impl WidgetVisuals {
         let Self {
             bg_fill,
             bg_stroke,
-            corner_radius,
+            rounding,
             fg_stroke,
             expansion,
         } = self;
-        ui_color(ui, bg_fill, "bg_fill");
-        stroke_ui(ui, bg_stroke, "bg_stroke");
-        ui.add(Slider::new(corner_radius, 0.0..=10.0).text("corner_radius"));
-        stroke_ui(ui, fg_stroke, "fg_stroke (text)");
+        ui_color(ui, bg_fill, "background fill");
+        stroke_ui(ui, bg_stroke, "background stroke");
+
+        rounding_ui(ui, rounding);
+
+        stroke_ui(ui, fg_stroke, "foreground stroke (text)");
         ui.add(Slider::new(expansion, -5.0..=5.0).text("expansion"))
             .on_hover_text("make shapes this much larger");
     }
@@ -825,7 +1074,7 @@ impl Visuals {
             faint_bg_color,
             extreme_bg_color,
             code_bg_color,
-            window_corner_radius,
+            window_rounding,
             window_shadow,
             popup_shadow,
             resize_corner_size,
@@ -850,7 +1099,9 @@ impl Visuals {
             // Common shortcuts
             ui_color(ui, &mut widgets.noninteractive.bg_fill, "Fill");
             stroke_ui(ui, &mut widgets.noninteractive.bg_stroke, "Outline");
-            ui.add(Slider::new(window_corner_radius, 0.0..=20.0).text("Rounding"));
+
+            rounding_ui(ui, window_rounding);
+
             shadow_ui(ui, window_shadow, "Shadow");
             shadow_ui(ui, popup_shadow, "Shadow (small menus and popups)");
         });
@@ -939,4 +1190,30 @@ fn ui_color(ui: &mut Ui, srgba: &mut Color32, label: impl Into<WidgetText>) -> R
         ui.label(label);
     })
     .response
+}
+
+fn rounding_ui(ui: &mut Ui, rounding: &mut Rounding) {
+    const MAX: f32 = 20.0;
+    let mut same = rounding.is_same();
+    ui.group(|ui| {
+        ui.horizontal(|ui| {
+            ui.label("Rounding: ");
+            ui.radio_value(&mut same, true, "Same");
+            ui.radio_value(&mut same, false, "Separate");
+        });
+
+        if same {
+            let mut cr = rounding.nw;
+            ui.add(Slider::new(&mut cr, 0.0..=MAX));
+            *rounding = Rounding::same(cr);
+        } else {
+            ui.add(Slider::new(&mut rounding.nw, 0.0..=MAX).text("North-West"));
+            ui.add(Slider::new(&mut rounding.ne, 0.0..=MAX).text("North-East"));
+            ui.add(Slider::new(&mut rounding.sw, 0.0..=MAX).text("South-West"));
+            ui.add(Slider::new(&mut rounding.se, 0.0..=MAX).text("South-East"));
+            if rounding.is_same() {
+                rounding.se *= 1.00001;
+            }
+        }
+    });
 }

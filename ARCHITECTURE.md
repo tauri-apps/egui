@@ -5,7 +5,7 @@ Also see [`CONTRIBUTING.md`](https://github.com/emilk/egui/blob/master/CONTRIBUT
 
 
 ## Crate overview
-The crates in this repository are: `egui, emath, epaint, egui, epi, egui-tao, egui_web, egui_glium, egui_glow, egui_demo_lib, egui_demo_app`.
+The crates in this repository are: `egui, emath, epaint, egui_extras, epi, egui-winit, egui_web, egui_glium, egui_glow, egui_demo_lib, egui_demo_app`.
 
 ### `egui`: The main GUI library.
 Example code: `if ui.button("Click me").clicked() { … }`
@@ -20,6 +20,9 @@ Examples: `Vec2, Pos2, Rect, lerp, remap`
 Example: `Shape::Circle { center, radius, fill, stroke }`
 
 Depends on `emath`, [`ab_glyph`](https://crates.io/crates/ab_glyph), [`atomic_refcell`](https://crates.io/crates/atomic_refcell), [`ahash`](https://crates.io/crates/ahash).
+
+### `egui_extras`
+This adds additional features on top of `egui`.
 
 ### `epi`
 Depends only on `egui`.
@@ -42,7 +45,7 @@ Puts an egui app inside a native window on your laptop. Paints the triangles tha
 ### `eframe`
 A wrapper around `egui_web` + `egui_glium`, so you can compile the same app for either web or native.
 
-The demo that you can see at <https://emilk.github.io/egui/index.html> is using `eframe` to host the `egui`. The demo code is found in:
+The demo that you can see at <https://www.egui.rs> is using `eframe` to host the `egui`. The demo code is found in:
 
 ### `egui_demo_lib`
 Depends on `egui` + `epi`.

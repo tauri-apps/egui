@@ -9,6 +9,8 @@
 //! The order in which you add panels matter!
 //! The first panel you add will always be the outermost, and the last you add will always be the innermost.
 //!
+//! You must never open one top-level panel from within another panel. Add one panel, then the next.
+//!
 //! Always add any [`CentralPanel`] last.
 //!
 //! Add your [`Window`]:s after any top-level panels.
@@ -25,11 +27,11 @@ struct PanelState {
 
 impl PanelState {
     fn load(ctx: &Context, bar_id: Id) -> Option<Self> {
-        ctx.memory().data.get_persisted(bar_id)
+        ctx.data().get_persisted(bar_id)
     }
 
     fn store(self, ctx: &Context, bar_id: Id) {
-        ctx.memory().data.insert_persisted(bar_id, self);
+        ctx.data().insert_persisted(bar_id, self);
     }
 }
 
@@ -117,6 +119,14 @@ impl SidePanel {
     /// Can panel be resized by dragging the edge of it?
     ///
     /// Default is `true`.
+    ///
+    /// If you want your panel to be resizable you also need a widget in it that
+    /// takes up more space as you resize it, such as:
+    /// * Wrapping text ([`Ui::horizontal_wrapped`]).
+    /// * A [`ScrollArea`].
+    /// * A [`Separator`].
+    /// * A [`TextEdit`].
+    /// * …
     pub fn resizable(mut self, resizable: bool) -> Self {
         self.resizable = resizable;
         self
@@ -191,7 +201,7 @@ impl SidePanel {
         let mut is_resizing = false;
         if resizable {
             let resize_id = id.with("__resize");
-            if let Some(pointer) = ui.input().pointer.latest_pos() {
+            if let Some(pointer) = ui.ctx().latest_pointer_pos() {
                 let we_are_on_top = ui
                     .ctx()
                     .layer_id_at(pointer)
@@ -276,7 +286,7 @@ impl SidePanel {
     /// Show the panel at the top level.
     pub fn show<R>(
         self,
-        ctx: &CtxRef,
+        ctx: &Context,
         add_contents: impl FnOnce(&mut Ui) -> R,
     ) -> InnerResponse<R> {
         self.show_dyn(ctx, Box::new(add_contents))
@@ -285,7 +295,7 @@ impl SidePanel {
     /// Show the panel at the top level.
     fn show_dyn<'c, R>(
         self,
-        ctx: &CtxRef,
+        ctx: &Context,
         add_contents: Box<dyn FnOnce(&mut Ui) -> R + 'c>,
     ) -> InnerResponse<R> {
         let layer_id = LayerId::background();
@@ -393,6 +403,14 @@ impl TopBottomPanel {
     /// Can panel be resized by dragging the edge of it?
     ///
     /// Default is `false`.
+    ///
+    /// If you want your panel to be resizable you also need a widget in it that
+    /// takes up more space as you resize it, such as:
+    /// * Wrapping text ([`Ui::horizontal_wrapped`]).
+    /// * A [`ScrollArea`].
+    /// * A [`Separator`].
+    /// * A [`TextEdit`].
+    /// * …
     pub fn resizable(mut self, resizable: bool) -> Self {
         self.resizable = resizable;
         self
@@ -469,7 +487,8 @@ impl TopBottomPanel {
         let mut is_resizing = false;
         if resizable {
             let resize_id = id.with("__resize");
-            if let Some(pointer) = ui.input().pointer.latest_pos() {
+            let latest_pos = ui.input().pointer.latest_pos();
+            if let Some(pointer) = latest_pos {
                 let we_are_on_top = ui
                     .ctx()
                     .layer_id_at(pointer)
@@ -554,7 +573,7 @@ impl TopBottomPanel {
     /// Show the panel at the top level.
     pub fn show<R>(
         self,
-        ctx: &CtxRef,
+        ctx: &Context,
         add_contents: impl FnOnce(&mut Ui) -> R,
     ) -> InnerResponse<R> {
         self.show_dyn(ctx, Box::new(add_contents))
@@ -563,7 +582,7 @@ impl TopBottomPanel {
     /// Show the panel at the top level.
     fn show_dyn<'c, R>(
         self,
-        ctx: &CtxRef,
+        ctx: &Context,
         add_contents: Box<dyn FnOnce(&mut Ui) -> R + 'c>,
     ) -> InnerResponse<R> {
         let layer_id = LayerId::background();
@@ -654,7 +673,7 @@ impl CentralPanel {
     /// Show the panel at the top level.
     pub fn show<R>(
         self,
-        ctx: &CtxRef,
+        ctx: &Context,
         add_contents: impl FnOnce(&mut Ui) -> R,
     ) -> InnerResponse<R> {
         self.show_dyn(ctx, Box::new(add_contents))
@@ -663,7 +682,7 @@ impl CentralPanel {
     /// Show the panel at the top level.
     fn show_dyn<'c, R>(
         self,
-        ctx: &CtxRef,
+        ctx: &Context,
         add_contents: Box<dyn FnOnce(&mut Ui) -> R + 'c>,
     ) -> InnerResponse<R> {
         let available_rect = ctx.available_rect();

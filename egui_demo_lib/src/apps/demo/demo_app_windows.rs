@@ -1,5 +1,5 @@
 use super::Demo;
-use egui::{CtxRef, ScrollArea, Ui};
+use egui::{Context, ScrollArea, Ui};
 use std::collections::BTreeSet;
 
 // ----------------------------------------------------------------------------
@@ -16,6 +16,7 @@ struct Demos {
 impl Default for Demos {
     fn default() -> Self {
         Self::from_demos(vec![
+            Box::new(super::paint_bezier::PaintBezier::default()),
             Box::new(super::code_editor::CodeEditor::default()),
             Box::new(super::code_example::CodeExample::default()),
             Box::new(super::context_menu::ContextMenus::default()),
@@ -28,6 +29,7 @@ impl Default for Demos {
             Box::new(super::plot_demo::PlotDemo::default()),
             Box::new(super::scrolling::Scrolling::default()),
             Box::new(super::sliders::Sliders::default()),
+            Box::new(super::text_edit::TextEdit::default()),
             Box::new(super::widget_gallery::WidgetGallery::default()),
             Box::new(super::window_options::WindowOptions::default()),
             Box::new(super::tests::WindowResizeTest::default()),
@@ -57,7 +59,7 @@ impl Demos {
         }
     }
 
-    pub fn windows(&mut self, ctx: &CtxRef) {
+    pub fn windows(&mut self, ctx: &Context) {
         let Self { demos, open } = self;
         for demo in demos {
             let mut is_open = open.contains(demo.name());
@@ -112,7 +114,7 @@ impl Tests {
         }
     }
 
-    pub fn windows(&mut self, ctx: &CtxRef) {
+    pub fn windows(&mut self, ctx: &Context) {
         let Self { demos, open } = self;
         for demo in demos {
             let mut is_open = open.contains(demo.name());
@@ -148,7 +150,7 @@ pub struct DemoWindows {
 impl DemoWindows {
     /// Show the app ui (menu bar and windows).
     /// `sidebar_ui` can be used to optionally show some things in the sidebar
-    pub fn ui(&mut self, ctx: &CtxRef) {
+    pub fn ui(&mut self, ctx: &Context) {
         let Self { demos, tests } = self;
 
         egui::SidePanel::right("egui_demo_panel")
@@ -213,7 +215,7 @@ impl DemoWindows {
     }
 
     /// Show the open windows.
-    fn windows(&mut self, ctx: &CtxRef) {
+    fn windows(&mut self, ctx: &Context) {
         let Self { demos, tests } = self;
 
         demos.windows(ctx);

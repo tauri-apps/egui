@@ -47,7 +47,7 @@ impl super::Demo for ContextMenus {
         "☰ Context Menus"
     }
 
-    fn show(&mut self, ctx: &egui::CtxRef, open: &mut bool) {
+    fn show(&mut self, ctx: &egui::Context, open: &mut bool) {
         use super::View;
         egui::Window::new(self.name())
             .vscroll(false)
@@ -104,6 +104,9 @@ impl super::View for ContextMenus {
                     }
                 });
             });
+        });
+        ui.vertical_centered(|ui| {
+            ui.add(crate::__egui_github_link_file!());
         });
     }
 }

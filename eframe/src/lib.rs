@@ -26,7 +26,7 @@
 //!        "My egui App"
 //!    }
 //!
-//!    fn update(&mut self, ctx: &egui::CtxRef, frame: &epi::Frame) {
+//!    fn update(&mut self, ctx: &egui::Context, frame: &epi::Frame) {
 //!        egui::CentralPanel::default().show(ctx, |ui| {
 //!            ui.heading("Hello World!");
 //!        });
@@ -65,7 +65,7 @@
 )]
 #![allow(clippy::needless_doctest_main)]
 
-pub use {egui, epi};
+pub use {egui, egui::emath, egui::epaint, epi};
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use epi::NativeOptions;
@@ -129,7 +129,7 @@ pub fn start_web(canvas_id: &str, app: Box<dyn epi::App>) -> Result<(), wasm_bin
 ///        "My egui App"
 ///    }
 ///
-///    fn update(&mut self, ctx: &egui::CtxRef, frame: &epi::Frame) {
+///    fn update(&mut self, ctx: &egui::Context, frame: &epi::Frame) {
 ///        egui::CentralPanel::default().show(ctx, |ui| {
 ///            ui.heading("Hello World!");
 ///        });
@@ -160,7 +160,7 @@ pub fn run_native(app: Box<dyn epi::App>, native_options: epi::NativeOptions) ->
 ///        "My egui App"
 ///    }
 ///
-///    fn update(&mut self, ctx: &egui::CtxRef, frame: &epi::Frame) {
+///    fn update(&mut self, ctx: &egui::Context, frame: &epi::Frame) {
 ///        egui::CentralPanel::default().show(ctx, |ui| {
 ///            ui.heading("Hello World!");
 ///        });

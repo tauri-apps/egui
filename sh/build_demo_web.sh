@@ -42,21 +42,26 @@ rm -f docs/${CRATE_NAME}_bg.wasm
 echo "Building rust…"
 BUILD=release
 
-cargo build \
-  -p ${CRATE_NAME} \
-  --release \
-  --lib \
-  --target wasm32-unknown-unknown \
-  --no-default-features \
-  --features ${FEATURES}
+(cd $CRATE_NAME &&
+  cargo build \
+    --release \
+    --lib \
+    --target wasm32-unknown-unknown \
+    --no-default-features \
+    --features ${FEATURES}
+)
 
 # Get the output directory (in the workspace it is in another location)
 TARGET=`cargo metadata --format-version=1 | jq --raw-output .target_directory`
 
 echo "Generating JS bindings for wasm…"
 TARGET_NAME="${CRATE_NAME}.wasm"
-wasm-bindgen "${TARGET}/wasm32-unknown-unknown/$BUILD/$TARGET_NAME" \
-  --out-dir docs --no-modules --no-typescript
+WASM_PATH="${TARGET}/wasm32-unknown-unknown/$BUILD/$TARGET_NAME"
+wasm-bindgen ${WASM_PATH} --out-dir docs --no-modules --no-typescript
+
+# if this fails with "error: cannot import from modules (`env`) with `--no-modules`", you can use:
+# wasm2wat target/wasm32-unknown-unknown/release/egui_demo_app.wasm | rg env
+# wasm2wat target/wasm32-unknown-unknown/release/egui_demo_app.wasm | rg "call .now\b" -B 20 # What calls `$now` (often a culprit)
 
 # to get wasm-strip:  apt/brew/dnf install wabt
 # wasm-strip docs/${CRATE_NAME}_bg.wasm

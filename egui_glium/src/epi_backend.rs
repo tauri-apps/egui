@@ -47,6 +47,7 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
     let mut painter = crate::Painter::new(&display);
     let mut integration = egui_tao::epi::EpiIntegration::new(
         "egui_glium",
+        painter.max_texture_side(),
         display.gl_window().window(),
         repaint_signal,
         persistence,
@@ -66,13 +67,16 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
 
-            let (needs_repaint, mut tex_allocation_data, shapes) =
-                integration.update(display.gl_window().window());
-            let clipped_meshes = integration.egui_ctx.tessellate(shapes);
+            let egui::FullOutput {
+                platform_output,
+                needs_repaint,
+                textures_delta,
+                shapes,
+            } = integration.update(display.gl_window().window());
 
-            for (id, image) in tex_allocation_data.creations {
-                painter.set_texture(&display, id, &image);
-            }
+            integration.handle_platform_output(display.gl_window().window(), platform_output);
+
+            let clipped_meshes = integration.egui_ctx.tessellate(shapes);
 
             // paint:
             {
@@ -81,19 +85,15 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
                 let color = integration.app.clear_color();
                 target.clear_color(color[0], color[1], color[2], color[3]);
 
-                painter.paint_meshes(
+                painter.paint_and_update_textures(
                     &display,
                     &mut target,
                     integration.egui_ctx.pixels_per_point(),
                     clipped_meshes,
-                    &integration.egui_ctx.font_image(),
+                    &textures_delta,
                 );
 
                 target.finish().unwrap();
-            }
-
-            for id in tex_allocation_data.destructions.drain(..) {
-                painter.free_texture(id);
             }
 
             {

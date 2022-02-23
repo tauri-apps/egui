@@ -1,29 +1,59 @@
+pub fn points_to_size(points: egui::Vec2) -> tao::dpi::LogicalSize<f64> {
+    tao::dpi::LogicalSize {
+        width: points.x as f64,
+        height: points.y as f64,
+    }
+}
+
 pub fn window_builder(
     native_options: &epi::NativeOptions,
     window_settings: &Option<crate::WindowSettings>,
 ) -> tao::window::WindowBuilder {
+    let epi::NativeOptions {
+        always_on_top,
+        maximized,
+        decorated,
+        drag_and_drop_support,
+        icon_data,
+        initial_window_pos,
+        initial_window_size,
+        min_window_size,
+        max_window_size,
+        resizable,
+        transparent,
+    } = native_options;
+
     let window_icon = native_options.icon_data.clone().and_then(load_icon);
 
     let mut window_builder = tao::window::WindowBuilder::new()
-        .with_always_on_top(native_options.always_on_top)
-        .with_maximized(native_options.maximized)
-        .with_decorations(native_options.decorated)
-        .with_resizable(native_options.resizable)
-        .with_transparent(native_options.transparent)
+        .with_always_on_top(*always_on_top)
+        .with_maximized(*maximized)
+        .with_decorations(*decorated)
+        .with_resizable(*resizable)
+        .with_transparent(*transparent)
         .with_window_icon(window_icon);
 
-    window_builder =
-        window_builder_drag_and_drop(window_builder, native_options.drag_and_drop_support);
+    if let Some(min_size) = *min_window_size {
+        window_builder = window_builder.with_min_inner_size(points_to_size(min_size));
+    }
+    if let Some(max_size) = *max_window_size {
+        window_builder = window_builder.with_max_inner_size(points_to_size(max_size));
+    }
 
-    let initial_size_points = native_options.initial_window_size;
+    window_builder = window_builder_drag_and_drop(window_builder, *drag_and_drop_support);
 
     if let Some(window_settings) = window_settings {
         window_builder = window_settings.initialize_window(window_builder);
-    } else if let Some(initial_size_points) = initial_size_points {
-        window_builder = window_builder.with_inner_size(tao::dpi::LogicalSize {
-            width: initial_size_points.x as f64,
-            height: initial_size_points.y as f64,
-        });
+    } else {
+        if let Some(pos) = *initial_window_pos {
+            window_builder = window_builder.with_position(tao::dpi::PhysicalPosition {
+                x: pos.x as f64,
+                y: pos.y as f64,
+            });
+        }
+        if let Some(initial_window_size) = *initial_window_size {
+            window_builder = window_builder.with_inner_size(points_to_size(initial_window_size));
+        }
     }
 
     window_builder
@@ -55,10 +85,9 @@ pub fn handle_app_output(
     window: &tao::window::Window,
     current_pixels_per_point: f32,
     app_output: epi::backend::AppOutput,
-) -> epi::backend::TexAllocationData {
+) {
     let epi::backend::AppOutput {
         quit: _,
-        tex_allocation_data,
         window_size,
         window_title,
         decorated,
@@ -86,8 +115,6 @@ pub fn handle_app_output(
     if drag_window {
         let _ = window.drag_window();
     }
-
-    tex_allocation_data
 }
 
 // ----------------------------------------------------------------------------
@@ -95,7 +122,7 @@ pub fn handle_app_output(
 /// For loading/saving app state and/or egui memory to disk.
 pub struct Persistence {
     storage: Option<Box<dyn epi::Storage>>,
-    last_auto_save: std::time::Instant,
+    last_auto_save: instant::Instant,
 }
 
 #[allow(clippy::unused_self)]
@@ -116,7 +143,7 @@ impl Persistence {
 
         Self {
             storage: create_storage(app_name),
-            last_auto_save: std::time::Instant::now(),
+            last_auto_save: instant::Instant::now(),
         }
     }
 
@@ -177,7 +204,7 @@ impl Persistence {
         egui_ctx: &egui::Context,
         window: &tao::window::Window,
     ) {
-        let now = std::time::Instant::now();
+        let now = instant::Instant::now();
         if now - self.last_auto_save > app.auto_save_interval() {
             self.save(app, egui_ctx, window);
             self.last_auto_save = now;
@@ -191,30 +218,35 @@ impl Persistence {
 pub struct EpiIntegration {
     frame: epi::Frame,
     persistence: crate::epi::Persistence,
-    pub egui_ctx: egui::CtxRef,
+    pub egui_ctx: egui::Context,
+    pending_full_output: egui::FullOutput,
     egui_tao: crate::State,
     pub app: Box<dyn epi::App>,
     /// When set, it is time to quit
     quit: bool,
+    can_drag_window: bool,
 }
 
 impl EpiIntegration {
     pub fn new(
         integration_name: &'static str,
+        max_texture_side: usize,
         window: &tao::window::Window,
         repaint_signal: std::sync::Arc<dyn epi::backend::RepaintSignal>,
         persistence: crate::epi::Persistence,
         app: Box<dyn epi::App>,
     ) -> Self {
-        let egui_ctx = egui::CtxRef::default();
+        let egui_ctx = egui::Context::default();
 
         *egui_ctx.memory() = persistence.load_memory().unwrap_or_default();
+
+        let prefer_dark_mode = prefer_dark_mode();
 
         let frame = epi::Frame::new(epi::backend::FrameData {
             info: epi::IntegrationInfo {
                 name: integration_name,
                 web_info: None,
-                prefer_dark_mode: None, // TODO: figure out system default
+                prefer_dark_mode,
                 cpu_usage: None,
                 native_pixels_per_point: Some(crate::native_pixels_per_point(window)),
             },
@@ -222,13 +254,21 @@ impl EpiIntegration {
             repaint_signal,
         });
 
+        if prefer_dark_mode == Some(true) {
+            egui_ctx.set_visuals(egui::Visuals::dark());
+        } else {
+            egui_ctx.set_visuals(egui::Visuals::light());
+        }
+
         let mut slf = Self {
             frame,
             persistence,
             egui_ctx,
-            egui_tao: crate::State::new(window),
+            egui_tao: crate::State::new(max_texture_side, window),
+            pending_full_output: Default::default(),
             app,
             quit: false,
+            can_drag_window: false,
         };
 
         slf.setup(window);
@@ -243,17 +283,19 @@ impl EpiIntegration {
         self.app
             .setup(&self.egui_ctx, &self.frame, self.persistence.storage());
         let app_output = self.frame.take_app_output();
-        self.quit |= app_output.quit;
-        let tex_alloc_data =
-            crate::epi::handle_app_output(window, self.egui_ctx.pixels_per_point(), app_output);
-        self.frame.lock().output.tex_allocation_data = tex_alloc_data; // Do it later
+
+        if app_output.quit {
+            self.quit = self.app.on_exit_event();
+        }
+
+        crate::epi::handle_app_output(window, self.egui_ctx.pixels_per_point(), app_output);
     }
 
     fn warm_up(&mut self, window: &tao::window::Window) {
-        let saved_memory = self.egui_ctx.memory().clone();
+        let saved_memory: egui::Memory = self.egui_ctx.memory().clone();
         self.egui_ctx.memory().set_everything_is_visible(true);
-        let (_, tex_alloc_data, _) = self.update(window);
-        self.frame.lock().output.tex_allocation_data = tex_alloc_data; // handle it next frame
+        let full_output = self.update(window);
+        self.pending_full_output.append(full_output); // Handle it next frame
         *self.egui_ctx.memory() = saved_memory; // We don't want to remember that windows were huge.
         self.egui_ctx.clear_animations();
     }
@@ -264,40 +306,55 @@ impl EpiIntegration {
     }
 
     pub fn on_event(&mut self, event: &tao::event::WindowEvent<'_>) {
-        use tao::event::WindowEvent;
-        self.quit |= matches!(event, WindowEvent::CloseRequested | WindowEvent::Destroyed);
+        use tao::event::{ElementState, MouseButton, WindowEvent};
+
+        match event {
+            WindowEvent::CloseRequested => self.quit = self.app.on_exit_event(),
+            WindowEvent::Destroyed => self.quit = true,
+            WindowEvent::MouseInput {
+                button: MouseButton::Left,
+                state: ElementState::Pressed,
+                ..
+            } => self.can_drag_window = true,
+            _ => {}
+        }
+
         self.egui_tao.on_event(&self.egui_ctx, event);
     }
 
-    /// Returns `needs_repaint` and shapes to paint.
-    pub fn update(
-        &mut self,
-        window: &tao::window::Window,
-    ) -> (
-        bool,
-        epi::backend::TexAllocationData,
-        Vec<egui::epaint::ClippedShape>,
-    ) {
-        let frame_start = std::time::Instant::now();
+    pub fn update(&mut self, window: &tao::window::Window) -> egui::FullOutput {
+        let frame_start = instant::Instant::now();
 
         let raw_input = self.egui_tao.take_egui_input(window);
-        let (egui_output, shapes) = self.egui_ctx.run(raw_input, |egui_ctx| {
+        let full_output = self.egui_ctx.run(raw_input, |egui_ctx| {
             self.app.update(egui_ctx, &self.frame);
         });
+        self.pending_full_output.append(full_output);
+        let full_output = std::mem::take(&mut self.pending_full_output);
 
-        let needs_repaint = egui_output.needs_repaint;
-        self.egui_tao
-            .handle_output(window, &self.egui_ctx, egui_output);
-
-        let app_output = self.frame.take_app_output();
-        self.quit |= app_output.quit;
-        let tex_allocation_data =
+        {
+            let mut app_output = self.frame.take_app_output();
+            app_output.drag_window &= self.can_drag_window; // Necessary on Windows; see https://github.com/emilk/egui/pull/1108
+            self.can_drag_window = false;
+            if app_output.quit {
+                self.quit = self.app.on_exit_event();
+            }
             crate::epi::handle_app_output(window, self.egui_ctx.pixels_per_point(), app_output);
+        }
 
-        let frame_time = (std::time::Instant::now() - frame_start).as_secs_f64() as f32;
+        let frame_time = (instant::Instant::now() - frame_start).as_secs_f64() as f32;
         self.frame.lock().info.cpu_usage = Some(frame_time);
 
-        (needs_repaint, tex_allocation_data, shapes)
+        full_output
+    }
+
+    pub fn handle_platform_output(
+        &mut self,
+        window: &tao::window::Window,
+        platform_output: egui::PlatformOutput,
+    ) {
+        self.egui_tao
+            .handle_platform_output(window, &self.egui_ctx, platform_output);
     }
 
     pub fn maybe_autosave(&mut self, window: &tao::window::Window) {
@@ -310,4 +367,17 @@ impl EpiIntegration {
         self.persistence
             .save(&mut *self.app, &self.egui_ctx, window);
     }
+}
+
+#[cfg(feature = "dark-light")]
+fn prefer_dark_mode() -> Option<bool> {
+    match dark_light::detect() {
+        dark_light::Mode::Dark => Some(true),
+        dark_light::Mode::Light => Some(false),
+    }
+}
+
+#[cfg(not(feature = "dark-light"))]
+fn prefer_dark_mode() -> Option<bool> {
+    None
 }

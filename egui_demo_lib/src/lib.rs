@@ -140,15 +140,15 @@ Curabitur pretium tincidunt lacus. Nulla gravida orci a odio. Nullam varius, tur
 #[test]
 fn test_egui_e2e() {
     let mut demo_windows = crate::DemoWindows::default();
-    let mut ctx = egui::CtxRef::default();
+    let ctx = egui::Context::default();
     let raw_input = egui::RawInput::default();
 
     const NUM_FRAMES: usize = 5;
     for _ in 0..NUM_FRAMES {
-        let (_output, shapes) = ctx.run(raw_input.clone(), |ctx| {
+        let full_output = ctx.run(raw_input.clone(), |ctx| {
             demo_windows.ui(ctx);
         });
-        let clipped_meshes = ctx.tessellate(shapes);
+        let clipped_meshes = ctx.tessellate(full_output.shapes);
         assert!(!clipped_meshes.is_empty());
     }
 }
@@ -156,7 +156,7 @@ fn test_egui_e2e() {
 #[test]
 fn test_egui_zero_window_size() {
     let mut demo_windows = crate::DemoWindows::default();
-    let mut ctx = egui::CtxRef::default();
+    let ctx = egui::Context::default();
     let raw_input = egui::RawInput {
         screen_rect: Some(egui::Rect::from_min_max(egui::Pos2::ZERO, egui::Pos2::ZERO)),
         ..Default::default()
@@ -164,10 +164,10 @@ fn test_egui_zero_window_size() {
 
     const NUM_FRAMES: usize = 5;
     for _ in 0..NUM_FRAMES {
-        let (_output, shapes) = ctx.run(raw_input.clone(), |ctx| {
+        let full_output = ctx.run(raw_input.clone(), |ctx| {
             demo_windows.ui(ctx);
         });
-        let clipped_meshes = ctx.tessellate(shapes);
+        let clipped_meshes = ctx.tessellate(full_output.shapes);
         assert!(clipped_meshes.is_empty(), "There should be nothing to show");
     }
 }

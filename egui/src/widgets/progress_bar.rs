@@ -6,6 +6,9 @@ enum ProgressBarText {
 }
 
 /// A simple progress bar.
+///
+/// See also: [`crate::Spinner`].
+#[must_use = "You should put this widget in an ui with `ui.add(widget);`"]
 pub struct ProgressBar {
     progress: f32,
     desired_width: Option<f32>,
@@ -62,10 +65,6 @@ impl Widget for ProgressBar {
 
         let animate = animate && progress < 1.0;
 
-        if animate {
-            ui.ctx().request_repaint();
-        }
-
         let desired_width =
             desired_width.unwrap_or_else(|| ui.available_size_before_wrap().x.at_least(96.0));
         let height = ui.spacing().interact_size.y;
@@ -73,11 +72,15 @@ impl Widget for ProgressBar {
             ui.allocate_exact_size(vec2(desired_width, height), Sense::hover());
 
         if ui.is_rect_visible(response.rect) {
+            if animate {
+                ui.ctx().request_repaint();
+            }
+
             let visuals = ui.style().visuals.clone();
-            let corner_radius = outer_rect.height() / 2.0;
+            let rounding = outer_rect.height() / 2.0;
             ui.painter().rect(
                 outer_rect,
-                corner_radius,
+                rounding,
                 visuals.extreme_bg_color,
                 Stroke::none(),
             );
@@ -98,7 +101,7 @@ impl Widget for ProgressBar {
 
             ui.painter().rect(
                 inner_rect,
-                corner_radius,
+                rounding,
                 Color32::from(Rgba::from(visuals.selection.bg_fill) * color_factor as f32),
                 Stroke::none(),
             );
@@ -107,14 +110,14 @@ impl Widget for ProgressBar {
                 let n_points = 20;
                 let start_angle = ui.input().time as f64 * 360f64.to_radians();
                 let end_angle = start_angle + 240f64.to_radians() * ui.input().time.sin();
-                let circle_radius = corner_radius - 2.0;
+                let circle_radius = rounding - 2.0;
                 let points: Vec<Pos2> = (0..n_points)
                     .map(|i| {
                         let angle = lerp(start_angle..=end_angle, i as f64 / n_points as f64);
                         let (sin, cos) = angle.sin_cos();
                         inner_rect.right_center()
                             + circle_radius * vec2(cos as f32, sin as f32)
-                            + vec2(-corner_radius, 0.0)
+                            + vec2(-rounding, 0.0)
                     })
                     .collect();
                 ui.painter().add(Shape::line(

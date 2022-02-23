@@ -88,6 +88,8 @@
 #![allow(clippy::manual_range_contains)]
 
 pub mod painter;
+#[cfg(feature = "tao")]
+use egui_tao::tao;
 pub use glow;
 pub use painter::Painter;
 #[cfg(feature = "tao")]
@@ -109,25 +111,29 @@ pub use epi_backend::{run, NativeOptions};
 /// Use [`egui`] from a [`glow`] app.
 #[cfg(feature = "tao")]
 pub struct EguiGlow {
-    pub egui_ctx: egui::CtxRef,
+    pub egui_ctx: egui::Context,
     pub egui_tao: egui_tao::State,
     pub painter: crate::Painter,
+
+    shapes: Vec<egui::epaint::ClippedShape>,
+    textures_delta: egui::TexturesDelta,
 }
 
 #[cfg(feature = "tao")]
 impl EguiGlow {
-    pub fn new(
-        gl_window: &glutin::WindowedContext<glutin::PossiblyCurrent>,
-        gl: &glow::Context,
-    ) -> Self {
+    pub fn new(window: &tao::window::Window, gl: &glow::Context) -> Self {
+        let painter = crate::Painter::new(gl, None, "")
+            .map_err(|error| {
+                tracing::error!("error occurred in initializing painter:\n{}", error);
+            })
+            .unwrap();
+
         Self {
             egui_ctx: Default::default(),
-            egui_tao: egui_tao::State::new(gl_window.window()),
-            painter: crate::Painter::new(gl, None, "")
-                .map_err(|error| {
-                    eprintln!("some error occurred in initializing painter\n{}", error);
-                })
-                .unwrap(),
+            egui_tao: egui_tao::State::new(painter.max_texture_side(), window),
+            painter,
+            shapes: Default::default(),
+            textures_delta: Default::default(),
         }
     }
 
@@ -137,40 +143,55 @@ impl EguiGlow {
     /// and only when this returns `false` pass on the events to your game.
     ///
     /// Note that egui uses `tab` to move focus between elements, so this will always return `true` for tabs.
-    pub fn on_event(&mut self, event: &glutin::event::WindowEvent<'_>) -> bool {
+    pub fn on_event(&mut self, event: &tao::event::WindowEvent<'_>) -> bool {
         self.egui_tao.on_event(&self.egui_ctx, event)
     }
 
-    /// Returns `needs_repaint` and shapes to draw.
+    /// Returns `true` if egui requests a repaint.
+    ///
+    /// Call [`Self::paint`] later to paint.
     pub fn run(
         &mut self,
-        window: &glutin::window::Window,
-        run_ui: impl FnMut(&egui::CtxRef),
-    ) -> (bool, Vec<egui::epaint::ClippedShape>) {
+        window: &tao::window::Window,
+        run_ui: impl FnMut(&egui::Context),
+    ) -> bool {
         let raw_input = self.egui_tao.take_egui_input(window);
-        let (egui_output, shapes) = self.egui_ctx.run(raw_input, run_ui);
-        let needs_repaint = egui_output.needs_repaint;
+        let egui::FullOutput {
+            platform_output,
+            needs_repaint,
+            textures_delta,
+            shapes,
+        } = self.egui_ctx.run(raw_input, run_ui);
+
         self.egui_tao
-            .handle_output(window, &self.egui_ctx, egui_output);
-        (needs_repaint, shapes)
+            .handle_platform_output(window, &self.egui_ctx, platform_output);
+
+        self.shapes = shapes;
+        self.textures_delta.append(textures_delta);
+        needs_repaint
     }
 
-    pub fn paint(
-        &mut self,
-        gl_window: &glutin::WindowedContext<glutin::PossiblyCurrent>,
-        gl: &glow::Context,
-        shapes: Vec<egui::epaint::ClippedShape>,
-    ) {
+    /// Paint the results of the last call to [`Self::run`].
+    pub fn paint(&mut self, window: &tao::window::Window, gl: &glow::Context) {
+        let shapes = std::mem::take(&mut self.shapes);
+        let mut textures_delta = std::mem::take(&mut self.textures_delta);
+
+        for (id, image_delta) in textures_delta.set {
+            self.painter.set_texture(gl, id, &image_delta);
+        }
+
         let clipped_meshes = self.egui_ctx.tessellate(shapes);
-        let dimensions: [u32; 2] = gl_window.window().inner_size().into();
-        self.painter
-            .upload_egui_texture(gl, &self.egui_ctx.font_image());
+        let dimensions: [u32; 2] = window.inner_size().into();
         self.painter.paint_meshes(
             gl,
             dimensions,
             self.egui_ctx.pixels_per_point(),
             clipped_meshes,
         );
+
+        for id in textures_delta.free.drain(..) {
+            self.painter.free_texture(gl, id);
+        }
     }
 
     /// Call to release the allocated graphics resources.

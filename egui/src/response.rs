@@ -1,6 +1,7 @@
 use crate::{
-    emath::{lerp, Align, Pos2, Rect, Vec2},
-    CtxRef, CursorIcon, Id, LayerId, PointerButton, Sense, Ui, WidgetText, NUM_POINTER_BUTTONS,
+    emath::{Align, Pos2, Rect, Vec2},
+    menu, Context, CursorIcon, Id, LayerId, PointerButton, Sense, Ui, WidgetText,
+    NUM_POINTER_BUTTONS,
 };
 
 // ----------------------------------------------------------------------------
@@ -16,7 +17,7 @@ use crate::{
 pub struct Response {
     // CONTEXT:
     /// Used for optionally showing a tooltip and checking for more interactions.
-    pub ctx: CtxRef,
+    pub ctx: Context,
 
     // IN:
     /// Which layer the widget is part of.
@@ -382,6 +383,14 @@ impl Response {
         true
     }
 
+    /// Like `on_hover_text`, but show the text next to cursor.
+    #[doc(alias = "tooltip")]
+    pub fn on_hover_text_at_pointer(self, text: impl Into<WidgetText>) -> Self {
+        self.on_hover_ui_at_pointer(|ui| {
+            ui.add(crate::widgets::Label::new(text));
+        })
+    }
+
     /// Show this text if the widget was hovered (i.e. a tooltip).
     ///
     /// The text will not be visible if the widget is not enabled.
@@ -434,7 +443,11 @@ impl Response {
         )
     }
 
-    /// Move the scroll to this UI with the specified alignment.
+    /// Adjust the scroll position until this UI becomes visible.
+    ///
+    /// If `align` is `None`, it'll scroll enough to bring the UI into view.
+    ///
+    /// See also: [`Ui::scroll_to_cursor`], [`Ui::scroll_to_rect`].
     ///
     /// ```
     /// # egui::__run_test_ui(|ui| {
@@ -442,18 +455,15 @@ impl Response {
     ///     for i in 0..1000 {
     ///         let response = ui.button("Scroll to me");
     ///         if response.clicked() {
-    ///             response.scroll_to_me(egui::Align::Center);
+    ///             response.scroll_to_me(Some(egui::Align::Center));
     ///         }
     ///     }
     /// });
     /// # });
     /// ```
-    pub fn scroll_to_me(&self, align: Align) {
-        let scroll_target = lerp(self.rect.x_range(), align.to_factor());
-        self.ctx.frame_state().scroll_target[0] = Some((scroll_target, align));
-
-        let scroll_target = lerp(self.rect.y_range(), align.to_factor());
-        self.ctx.frame_state().scroll_target[1] = Some((scroll_target, align));
+    pub fn scroll_to_me(&self, align: Option<Align>) {
+        self.ctx.frame_state().scroll_target[0] = Some((self.rect.x_range(), align));
+        self.ctx.frame_state().scroll_target[1] = Some((self.rect.y_range(), align));
     }
 
     /// For accessibility.
@@ -479,7 +489,7 @@ impl Response {
 
     /// Response to secondary clicks (right-clicks) by showing the given menu.
     ///
-    /// ``` rust
+    /// ```
     /// # egui::__run_test_ui(|ui| {
     /// let response = ui.label("Right-click me!");
     /// response.context_menu(|ui| {
@@ -492,9 +502,7 @@ impl Response {
     ///
     /// See also: [`Ui::menu_button`] and [`Ui::close_menu`].
     pub fn context_menu(self, add_contents: impl FnOnce(&mut Ui)) -> Self {
-        self.ctx
-            .context_menu_system()
-            .context_menu(&self, add_contents);
+        menu::context_menu(&self, add_contents);
         self
     }
 }
@@ -502,6 +510,8 @@ impl Response {
 impl Response {
     /// A logical "or" operation.
     /// For instance `a.union(b).hovered` means "was either a or b hovered?".
+    ///
+    /// The resulting [`Self::id`] will come from the first (`self`) argument.
     pub fn union(&self, other: Self) -> Self {
         assert!(self.ctx == other.ctx);
         crate::egui_assert!(
@@ -587,7 +597,9 @@ impl std::ops::BitOrAssign for Response {
 /// ```
 #[derive(Debug)]
 pub struct InnerResponse<R> {
+    /// What the user closure returned.
     pub inner: R,
+    /// The response of the area.
     pub response: Response,
 }
 

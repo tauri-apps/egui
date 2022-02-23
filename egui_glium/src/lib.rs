@@ -101,17 +101,26 @@ pub use egui_tao;
 
 /// Convenience wrapper for using [`egui`] from a [`glium`] app.
 pub struct EguiGlium {
-    pub egui_ctx: egui::CtxRef,
-    pub egui_tao: egui_tao::State,
+    pub egui_ctx: egui::Context,
+    pub egui_winit: egui_winit::State,
     pub painter: crate::Painter,
+
+    shapes: Vec<egui::epaint::ClippedShape>,
+    textures_delta: egui::TexturesDelta,
 }
 
 impl EguiGlium {
     pub fn new(display: &glium::Display) -> Self {
+        let painter = crate::Painter::new(display);
         Self {
             egui_ctx: Default::default(),
-            egui_tao: egui_tao::State::new(display.gl_window().window()),
-            painter: crate::Painter::new(display),
+            egui_winit: egui_winit::State::new(
+                painter.max_texture_side(),
+                display.gl_window().window(),
+            ),
+            painter,
+            shapes: Default::default(),
+            textures_delta: Default::default(),
         }
     }
 
@@ -125,35 +134,43 @@ impl EguiGlium {
         self.egui_tao.on_event(&self.egui_ctx, event)
     }
 
-    /// Returns `needs_repaint` and shapes to draw.
-    pub fn run(
-        &mut self,
-        display: &glium::Display,
-        run_ui: impl FnMut(&egui::CtxRef),
-    ) -> (bool, Vec<egui::epaint::ClippedShape>) {
+    /// Returns `true` if egui requests a repaint.
+    ///
+    /// Call [`Self::paint`] later to paint.
+    pub fn run(&mut self, display: &glium::Display, run_ui: impl FnMut(&egui::Context)) -> bool {
         let raw_input = self
             .egui_tao
             .take_egui_input(display.gl_window().window());
-        let (egui_output, shapes) = self.egui_ctx.run(raw_input, run_ui);
-        let needs_repaint = egui_output.needs_repaint;
-        self.egui_tao
-            .handle_output(display.gl_window().window(), &self.egui_ctx, egui_output);
-        (needs_repaint, shapes)
+        let egui::FullOutput {
+            platform_output,
+            needs_repaint,
+            textures_delta,
+            shapes,
+        } = self.egui_ctx.run(raw_input, run_ui);
+
+        self.egui_winit.handle_platform_output(
+            display.gl_window().window(),
+            &self.egui_ctx,
+            platform_output,
+        );
+
+        self.shapes = shapes;
+        self.textures_delta.append(textures_delta);
+
+        needs_repaint
     }
 
-    pub fn paint<T: glium::Surface>(
-        &mut self,
-        display: &glium::Display,
-        target: &mut T,
-        shapes: Vec<egui::epaint::ClippedShape>,
-    ) {
+    /// Paint the results of the last call to [`Self::run`].
+    pub fn paint<T: glium::Surface>(&mut self, display: &glium::Display, target: &mut T) {
+        let shapes = std::mem::take(&mut self.shapes);
+        let textures_delta = std::mem::take(&mut self.textures_delta);
         let clipped_meshes = self.egui_ctx.tessellate(shapes);
-        self.painter.paint_meshes(
+        self.painter.paint_and_update_textures(
             display,
             target,
             self.egui_ctx.pixels_per_point(),
             clipped_meshes,
-            &self.egui_ctx.font_image(),
+            &textures_delta,
         );
     }
 }
