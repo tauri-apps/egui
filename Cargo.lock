@@ -1004,7 +1004,7 @@ dependencies = [
  "epi",
  "instant",
  "serde",
- "tao",
+ "tao 0.7.0",
  "tracing",
  "tts",
  "webbrowser",
@@ -3250,6 +3250,46 @@ dependencies = [
  "gtk",
  "instant",
  "lazy_static",
+ "libc",
+ "log",
+ "ndk 0.4.0",
+ "ndk-glue 0.4.1",
+ "ndk-sys 0.2.2",
+ "objc",
+ "parking_lot 0.11.2",
+ "raw-window-handle",
+ "scopeguard",
+ "tao-core-video-sys",
+ "unicode-segmentation",
+ "windows 0.30.0",
+ "windows_macros",
+ "x11-dl",
+]
+
+[[package]]
+name = "tao"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b6a3359088d4c4735a13f933202f4ecd91f5991b41a8eb757f2449c044ce925"
+dependencies = [
+ "bitflags",
+ "cairo-rs",
+ "cc",
+ "cocoa",
+ "core-foundation",
+ "core-graphics",
+ "crossbeam-channel",
+ "dispatch",
+ "gdk",
+ "gdk-pixbuf",
+ "gdk-sys",
+ "gdkx11-sys",
+ "gio",
+ "glib",
+ "glib-sys",
+ "gtk",
+ "instant",
+ "lazy_static",
  "libappindicator",
  "libc",
  "log",
@@ -3302,7 +3342,7 @@ dependencies = [
  "log",
  "objc",
  "parking_lot 0.11.2",
- "tao",
+ "tao 0.6.2",
  "winapi",
 ]
 
