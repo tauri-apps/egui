@@ -46,7 +46,7 @@ convert_bytemuck = ["egui/convert_bytemuck"]
 egui = { version = "0.17.0", path = "../egui", default-features = false, features = ["single_threaded", "tracing"] }
 instant = { version = "0.1", features = ["wasm-bindgen"] }
 tracing = "0.1"
-tao = "0.8"
+tao = "0.9"
 
 epi = { version = "0.17.0", path = "../epi", optional = true }
 
