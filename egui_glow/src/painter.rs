@@ -129,7 +129,11 @@ impl Painter {
             (ShaderVersion::Es100, false) => (None, ""),
 
             // OpenGL 2.1 or above always support sRGB so add sRGB support marker
+            #[cfg(not(target_os = "linux"))]
             _ => (None, "#define SRGB_SUPPORTED"),
+            // Gtk::GlArea doesn't support sRGB
+            #[cfg(target_os = "linux")]
+            _ => (None, ""),
         };
 
         unsafe {

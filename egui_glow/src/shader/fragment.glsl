@@ -63,7 +63,7 @@ uniform sampler2D u_sampler;
         }
 
         // Empiric tweak to make e.g. shadows look more like they should:
-        gl_FragColor.a *= sqrt(gl_FragColor.a);
+        // gl_FragColor.a *= sqrt(gl_FragColor.a);
 
         // To gamma:
         gl_FragColor = srgba_from_linear(gl_FragColor) / 255.0;
