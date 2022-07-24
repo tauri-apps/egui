@@ -51,7 +51,7 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU8, Ordering};
 
 /// Run an egui app
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "linux")]
 #[allow(unsafe_code)]
 pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
     let persistence = egui_tao::epi::Persistence::from_app_name(app.name());
@@ -138,8 +138,8 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
             // Platform-dependent event handlers to workaround a winit bug
             // See: https://github.com/rust-windowing/winit/issues/987
             // See: https://github.com/rust-windowing/winit/issues/1619
-            tao::event::Event::RedrawEventsCleared if cfg!(windows) => redraw(),
-            tao::event::Event::RedrawRequested(_) if !cfg!(windows) => redraw(),
+            tao::event::Event::RedrawEventsCleared if !cfg!(windows) => redraw(),
+            tao::event::Event::RedrawRequested(_) if cfg!(windows) => redraw(),
 
             tao::event::Event::WindowEvent { event, .. } => {
                 if let tao::event::WindowEvent::Focused(new_focused) = event {
@@ -170,7 +170,7 @@ pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
 }
 
 /// Run an egui app
-#[cfg(target_os = "linux")]
+#[cfg(not(target_os = "linux"))]
 #[allow(unsafe_code)]
 pub fn run(app: Box<dyn epi::App>, native_options: &epi::NativeOptions) -> ! {
     use glutin::platform::ContextTraitExt;

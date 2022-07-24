@@ -6,7 +6,6 @@
 //! If you are writing an app, you may want to look at [`eframe`](https://docs.rs/eframe) instead.
 
 // Forbid warnings in release builds:
-#![cfg_attr(not(debug_assertions), deny(warnings))]
 #![deny(unsafe_code)]
 #![warn(
     clippy::all,
