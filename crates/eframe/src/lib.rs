@@ -123,7 +123,7 @@ pub fn start_web(
 // When compiling natively
 
 #[cfg(not(target_arch = "wasm32"))]
-mod native;
+pub mod native;
 
 /// This is how you start a native (desktop) app.
 ///

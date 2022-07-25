@@ -1,3 +1,5 @@
+> egui-tao is a fork of egui-winit to make egui work with tao
+
 # egui-winit
 
 [![Latest version](https://img.shields.io/crates/v/egui-winit.svg)](https://crates.io/crates/egui-winit)
