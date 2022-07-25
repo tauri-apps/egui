@@ -1,4 +1,4 @@
-mod epi_integration;
+pub mod epi_integration;
 pub mod run;
 
 /// File storage which can be used by native backends.
