@@ -513,7 +513,7 @@ mod wgpu_integration {
                     native_options.multisampling.max(1) as _,
                 );
                 #[cfg(not(target_os = "android"))]
-                painter.set_window(Some(&window));
+                // TODO(tauri) painter.set_window(Some(&window));
                 painter
             };
 
