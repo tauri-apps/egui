@@ -75,7 +75,7 @@ wasm-bindgen = { version = "0.2" }
 
 
 [dev-dependencies]
-glutin = { package = "glutin_tao", version = "0.29.1"} # examples/pure_glow
+glutin = { package = "glutin_tao", version = "0.30.0"} # examples/pure_glow
 
 
 [[example]]
