@@ -198,7 +198,7 @@ impl State {
                 let is_mac_cmd = cfg!(target_os = "macos")
                     && (self.egui_input.modifiers.ctrl || self.egui_input.modifiers.mac_cmd);
 
-                if ch.chars().all(|ch| is_printable_char(ch)) && !is_mac_cmd {
+                if ch.chars().all(is_printable_char) && !is_mac_cmd {
                     self.egui_input
                         .events
                         .push(egui::Event::Text(ch.to_string()));

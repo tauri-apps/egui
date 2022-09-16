@@ -183,7 +183,7 @@ pub fn create_storage(_app_name: &str) -> Option<Box<dyn epi::Storage>> {
 
 // ----------------------------------------------------------------------------
 
-/// Everything needed to make a winit-based integration for [`epi`].
+/// Everything needed to make a winit-based integration for epi.
 pub struct EpiIntegration {
     pub frame: epi::Frame,
     last_auto_save: std::time::Instant,
@@ -382,4 +382,3 @@ pub fn load_egui_memory(_storage: Option<&dyn epi::Storage>) -> Option<egui::Mem
     #[cfg(not(feature = "persistence"))]
     None
 }
-
