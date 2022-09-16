@@ -722,7 +722,7 @@ mod wgpu_integration {
                 run_and_return(event_loop, wgpu_eframe);
             });
         } else {
-            let event_loop = winit::event_loop::EventLoopBuilder::with_user_event().build();
+            let event_loop = winit::event_loop::EventLoop::with_user_event();
             let wgpu_eframe = WgpuWinitApp::new(&event_loop, app_name, native_options, app_creator);
             run_and_exit(event_loop, wgpu_eframe);
         }
