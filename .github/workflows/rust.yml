@@ -90,7 +90,7 @@ jobs:
           target: wasm32-unknown-unknown
           override: true
       - name: check
-        run: cargo check -p eframe --lib --no-default-features --features glow,persistence --target wasm32-unknown-unknown
+        run: cargo check -p eframe_tao --lib --no-default-features --features glow,persistence --target wasm32-unknown-unknown
 
   check_web_all_features:
     name: cargo check web --all-features

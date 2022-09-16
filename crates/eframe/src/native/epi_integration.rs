@@ -382,4 +382,3 @@ pub fn load_egui_memory(_storage: Option<&dyn epi::Storage>) -> Option<egui::Mem
     #[cfg(not(feature = "persistence"))]
     None
 }
-
