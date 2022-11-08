@@ -78,8 +78,8 @@ wgpu = { version = "0.13", optional = true }
 [target."cfg(not(target_arch = \"wasm32\"))".dependencies]
 dark-light = { version = "0.2.1", optional = true }
 egui-winit = { package = "egui-tao", version = "0.20.0", path = "../egui-winit", default-features = false, features = [ "clipboard", "links" ] }
-glutin = { package = "glutin_tao", version = "0.30.0" }
-winit = { package = "tao", version = "0.14", default-features = false }
+glutin = { package = "glutin_tao", version = "0.30.1" }
+winit = { package = "tao", version = "0.15", default-features = false }
 puffin = { version = "0.13", optional = true }
 directories-next = { version = "2", optional = true }
 

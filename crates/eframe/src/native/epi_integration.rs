@@ -65,6 +65,9 @@ pub fn window_builder(
 
     #[cfg(target_os = "linux")]
     {
+        window_builder = window_builder.with_rgba_visual(true);
+        window_builder = window_builder.with_app_paintable(true);
+        window_builder = window_builder.with_double_buffered(true);
         window_builder = window_builder.with_transparent_draw(!*transparent);
     }
 

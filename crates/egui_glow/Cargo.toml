@@ -64,7 +64,7 @@ web-sys = { version = "0.3", features = [ "console" ] }
 wasm-bindgen = { version = "0.2" }
 
 [dev-dependencies]
-glutin = { package = "glutin_tao", version = "0.30.0" }
+glutin = { package = "glutin_tao", version = "0.30.1" }
 
 [[example]]
 name = "pure_glow"
