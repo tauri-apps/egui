@@ -1859,9 +1859,9 @@ dependencies = [
 
 [[package]]
 name = "glutin_tao"
-version = "0.30.0"
+version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3cfb13098153a0049f9054014c857ce359dd07dd0269adb2d504df8c42e8ff6"
+checksum = "e85a577902ad9d799ff15ddddfd0228f8ade1f58dd49808e6141e7f92b06a8da"
 dependencies = [
  "cgl",
  "cocoa",
@@ -2151,6 +2151,20 @@ name = "jni"
 version = "0.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c6df18c2e3db7e453d3c6ac5b3e9d5182664d28788126d39b91f2d1e22b017ec"
+dependencies = [
+ "cesu8",
+ "combine",
+ "jni-sys",
+ "log",
+ "thiserror",
+ "walkdir",
+]
+
+[[package]]
+name = "jni"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "039022cdf4d7b1cf548d31f60ae783138e5fd42013f6271049d7df7afadef96c"
 dependencies = [
  "cesu8",
  "combine",
@@ -3619,9 +3633,9 @@ dependencies = [
 
 [[package]]
 name = "tao"
-version = "0.14.0"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43336f5d1793543ba96e2a1e75f3a5c7dcd592743be06a0ab3a190f4fcb4b934"
+checksum = "e2845fd58915455c5faf2c9ac5d8a5ed43bd23ab57f0a67d63612936209eae74"
 dependencies = [
  "bitflags",
  "cairo-rs",
@@ -3641,7 +3655,7 @@ dependencies = [
  "gtk",
  "image",
  "instant",
- "jni",
+ "jni 0.20.0",
  "lazy_static",
  "libc",
  "log",
@@ -3907,7 +3921,7 @@ checksum = "0f14cef4d39fc1b2a69d163772c9015d6e33d694a1f1e2047ec32274675a17cb"
 dependencies = [
  "cocoa-foundation",
  "dyn-clonable",
- "jni",
+ "jni 0.19.0",
  "lazy_static",
  "libc",
  "log",
@@ -3992,9 +4006,9 @@ checksum = "58dd944fd05f2f0b5c674917aea8a4df6af84f2d8de3fe8d988b95d28fb8fb09"
 
 [[package]]
 name = "unicode-segmentation"
-version = "1.9.0"
+version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e8820f5d777f6224dc4be3632222971ac30164d4a258d595640799554ebfd99"
+checksum = "0fdbf052a0783de01e944a6ce7a8cb939e295b1e7be835a1112c3b9a7f047a5a"
 
 [[package]]
 name = "unicode-vo"
@@ -4084,9 +4098,9 @@ dependencies = [
 
 [[package]]
 name = "uuid"
-version = "1.1.2"
+version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd6469f4314d5f1ffec476e05f17cc9a78bc7a27a6a857842170bdf8d6f98d2f"
+checksum = "feb41e78f93363bb2df8b0e86a2ca30eed7806ea16ea0c790d757cf93f79be83"
 dependencies = [
  "getrandom",
 ]
@@ -4299,7 +4313,7 @@ version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc6a3cffdb686fbb24d9fb8f03a213803277ed2300f11026a3afe1f108dc021b"
 dependencies = [
- "jni",
+ "jni 0.19.0",
  "ndk-glue 0.6.2",
  "url",
  "web-sys",
