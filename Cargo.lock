@@ -1240,7 +1240,7 @@ dependencies = [
 
 [[package]]
 name = "egui_glow_tao"
-version = "0.20.0"
+version = "0.20.1"
 dependencies = [
  "bytemuck",
  "document-features",
