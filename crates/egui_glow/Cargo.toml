@@ -1,6 +1,6 @@
 [package]
 name = "egui_glow_tao"
-version = "0.20.0"
+version = "0.20.1"
 authors = [ "Emil Ernerfeldt <emil.ernerfeldt@gmail.com>" ]
 description = "Bindings for using egui natively using the glow library"
 edition = "2021"
@@ -26,26 +26,12 @@ all-features = true
 name = "egui_glow"
 
 [features]
-default = []
-
-## For the `winit` integration:
-## enable cut/copy/paste to os clipboard.
-##
-## if disabled a clipboard will be simulated so you can still copy/paste within the egui app.
-clipboard = ["egui-winit?/clipboard"]
-
-## For the `winit` integration:
-## enable opening links in a browser when an egui hyperlink is clicked.
-links = ["egui-winit?/links"]
-
-## Experimental support for a screen reader.
-screen_reader = ["egui-winit?/screen_reader"]
-
-## Enable profiling with the [`puffin`](https://docs.rs/puffin) crate.
-puffin = ["dep:puffin", "egui-winit?/puffin"]
-
-## Enable [`winit`](https://docs.rs/winit) integration.
-winit = ["egui-winit",]
+default = [ ]
+clipboard = [ "egui-winit?/clipboard" ]
+links = [ "egui-winit?/links" ]
+screen_reader = [ "egui-winit?/screen_reader" ]
+puffin = [ "dep:puffin", "egui-winit?/puffin" ]
+winit = [ "egui-winit" ]
 
 [dependencies]
 egui = { version = "0.19.0", path = "../egui", default-features = false, features = [ "bytemuck" ] }

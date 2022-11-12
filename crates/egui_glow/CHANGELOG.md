@@ -1,5 +1,10 @@
 # Changelog for egui_glow
 
+## \[0.20.1]
+
+- Update tao to 0.15 and glutin_tao to 0.30.1
+  - [231e0706](https://github.com/tauri-apps/egui/commit/231e070680c134da0cd8d30f1e4ac3fbdd8704bb) chore: deps on 2022-11-12
+
 ## 0.19.0 - 2022-08-20
 
 - MSRV (Minimum Supported Rust Version) is now `1.61.0` ([#1846](https://github.com/emilk/egui/pull/1846)).
