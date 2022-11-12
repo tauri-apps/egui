@@ -4,6 +4,8 @@
 
 - Update tao to 0.15 and glutin_tao to 0.30.1
   - [231e0706](https://github.com/tauri-apps/egui/commit/231e070680c134da0cd8d30f1e4ac3fbdd8704bb) chore: deps on 2022-11-12
+  - [deb0fdc3](https://github.com/tauri-apps/egui/commit/deb0fdc34a6f2628f45d0df36b29f904c25b7e6a) Publish New Versions ([#11](https://github.com/tauri-apps/egui/pull/11)) on 2022-11-12
+  - [0b7d4723](https://github.com/tauri-apps/egui/commit/0b7d4723d05fe119041cb273fb5242b421e4948b) chore: deps on 2022-11-12
 
 ## \[0.20.0]
 
