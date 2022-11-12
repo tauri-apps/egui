@@ -1,5 +1,10 @@
 # Changelog for eframe
 
+## \[0.20.1]
+
+- Update tao to 0.15 and glutin_tao to 0.30.1
+  - [231e0706](https://github.com/tauri-apps/egui/commit/231e070680c134da0cd8d30f1e4ac3fbdd8704bb) chore: deps on 2022-11-12
+
 ## \[0.20.0]
 
 - Update `glutin_tao` to 0.30.
