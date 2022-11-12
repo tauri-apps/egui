@@ -25,13 +25,26 @@ all-features = true
 name = "egui_winit"
 
 [features]
-default = [ "clipboard", "links" ]
-bytemuck = [ "egui/bytemuck" ]
-clipboard = [ "arboard", "smithay-clipboard" ]
-links = [ "webbrowser" ]
-puffin = [ "dep:puffin" ]
-screen_reader = [ "tts" ]
-serde = [ "egui/serde", "dep:serde" ]
+default = ["clipboard", "links"]
+
+## [`bytemuck`](https://docs.rs/bytemuck) enables you to cast [`egui::epaint::Vertex`], [`egui::Vec2`] etc to `&[u8]`.
+bytemuck = ["egui/bytemuck"]
+
+## Enable cut/copy/paste to OS clipboard.
+## If disabled a clipboard will be simulated so you can still copy/paste within the egui app.
+clipboard = ["arboard", "smithay-clipboard"]
+
+## Enable opening links in a browser when an egui hyperlink is clicked.
+links = ["webbrowser"]
+
+## Enable profiling with the [`puffin`](https://docs.rs/puffin) crate.
+puffin = ["dep:puffin"]
+
+## Experimental support for a screen reader.
+screen_reader = ["tts"]
+
+## Allow serialization of [`WindowSettings`] using [`serde`](https://docs.rs/serde).
+serde = ["egui/serde", "dep:serde"]
 
 [dependencies]
 egui = { version = "0.19.0", path = "../egui", default-features = false, features = [ "tracing" ] }
