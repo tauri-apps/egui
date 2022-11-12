@@ -1,14 +1,5 @@
 # Changelog for egui_glow
 
-## \[0.20.0]
-
-- Update `glutin_tao` to 0.30.
-  - [a8fbfed7](https://github.com/tauri-apps/egui/commit/a8fbfed7bc45ba42a1623bcb6487a4301d93e996) setup covector on 2022-09-16
-
-All notable changes to the `egui_glow` integration will be noted in this file.
-
-## Unreleased
-
 ## 0.19.0 - 2022-08-20
 
 - MSRV (Minimum Supported Rust Version) is now `1.61.0` ([#1846](https://github.com/emilk/egui/pull/1846)).
