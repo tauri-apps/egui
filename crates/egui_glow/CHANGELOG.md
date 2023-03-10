@@ -1,5 +1,10 @@
 # Changelog for egui_glow
 
+## \[0.21.0]
+
+- Update tao to 0.17 and glutin_tao to 0.31.
+  - [f5f220a4](https://github.com/tauri-apps/egui/commit/f5f220a46c063e70fb276c472764d5be1f286c45) Update tao to 0.17 and glutin_tao to 0.31 on 2023-03-10
+
 ## \[0.20.1]
 
 - Update tao to 0.15 and glutin_tao to 0.30.1

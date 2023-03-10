@@ -1,6 +1,6 @@
 [package]
 name = "eframe_tao"
-version = "0.20.1"
+version = "0.21.0"
 authors = [ "Emil Ernerfeldt <emil.ernerfeldt@gmail.com>" ]
 description = "egui framework - write GUI apps that compiles to web and/or natively"
 edition = "2021"
@@ -25,50 +25,26 @@ all-features = true
 name = "eframe"
 
 [features]
-default = ["default_fonts", "glow"]
-
-## Detect dark mode system preference using [`dark-light`](https://docs.rs/dark-light).
-##
-## See also [`NativeOptions::follow_system_theme`] and [`NativeOptions::default_theme`].
-dark-light = ["dep:dark-light"]
-
-## If set, egui will use `include_bytes!` to bundle some fonts.
-## If you plan on specifying your own fonts you may disable this feature.
-default_fonts = ["egui/default_fonts"]
-
-## Use [`glow`](https://github.com/grovesNL/glow) for painting, via [`egui_glow`](https://github.com/emilk/egui/tree/master/crates/egui_glow).
-glow = ["dep:glow", "egui_glow"]
-
-## Enable saving app state to disk.
+default = [ "default_fonts", "glow" ]
+dark-light = [ "dep:dark-light" ]
+default_fonts = [ "egui/default_fonts" ]
+glow = [ "dep:glow", "egui_glow" ]
 persistence = [
   "directories-next",
   "egui-winit/serde",
   "egui/persistence",
   "ron",
-  "serde",
+  "serde"
 ]
-
-## Enable profiling with the [`puffin`](https://docs.rs/puffin) crate.
-##
-## Only enabled on native, because of the low resolution (1ms) of time keeping in browsers.
-## `eframe` will call `puffin::GlobalProfiler::lock().new_frame()` for you
-puffin = ["dep:puffin", "egui_glow?/puffin"]
-
-## Enable screen reader support (requires `ctx.options().screen_reader = true;`)
-screen_reader = [
-  "egui-winit/screen_reader",
-  "tts",
-]
-
-## Use [`wgpu`](https://docs.rs/wgpu) for painting (via [`egui_wgpu`](https://github.com/emilk/egui/tree/master/crates/egui_wgpu)).
-## This overrides the `glow` feature.
-wgpu = ["dep:wgpu", "egui-wgpu"]
+puffin = [ "dep:puffin", "egui_glow?/puffin" ]
+screen_reader = [ "egui-winit/screen_reader", "tts" ]
+wgpu = [ "dep:wgpu", "egui-wgpu" ]
 
 [dependencies]
 egui = { version = "0.19.0", path = "../egui", default-features = false, features = [ "bytemuck", "tracing" ] }
 tracing = { version = "0.1", default-features = false, features = [ "std" ] }
 document-features = { version = "0.2", optional = true }
-egui_glow = { package = "egui_glow_tao", version = "0.20.1", path = "../egui_glow", optional = true, default-features = false }
+egui_glow = { package = "egui_glow_tao", version = "0.21.0", path = "../egui_glow", optional = true, default-features = false }
 egui-wgpu = { version = "0.19.0", path = "../egui-wgpu", optional = true, features = [ "winit" ] }
 glow = { version = "0.11", optional = true }
 ron = { version = "0.8", optional = true, features = [ "integer128" ] }
@@ -77,7 +53,7 @@ wgpu = { version = "0.13", optional = true }
 
 [target."cfg(not(target_arch = \"wasm32\"))".dependencies]
 dark-light = { version = "0.2.1", optional = true }
-egui-winit = { package = "egui-tao", version = "0.20.1", path = "../egui-winit", default-features = false, features = [ "clipboard", "links" ] }
+egui-winit = { package = "egui-tao", version = "0.21.0", path = "../egui-winit", default-features = false, features = [ "clipboard", "links" ] }
 glutin = { package = "glutin_tao", version = "0.31.0" }
 winit = { package = "tao", version = "0.17", default-features = false }
 puffin = { version = "0.13", optional = true }
