@@ -1116,7 +1116,7 @@ checksum = "4f94fa09c2aeea5b8839e414b7b841bf429fd25b9c522116ac97ee87856d88b2"
 
 [[package]]
 name = "eframe_tao"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "bytemuck",
  "dark-light",
@@ -1158,7 +1158,7 @@ dependencies = [
 
 [[package]]
 name = "egui-tao"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "arboard",
  "document-features",
@@ -1241,7 +1241,7 @@ dependencies = [
 
 [[package]]
 name = "egui_glow_tao"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "bytemuck",
  "document-features",
