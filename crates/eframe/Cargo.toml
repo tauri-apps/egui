@@ -55,7 +55,7 @@ wgpu = { version = "0.13", optional = true }
 dark-light = { version = "0.2.1", optional = true }
 egui-winit = { package = "egui-tao", version = "0.21.0", path = "../egui-winit", default-features = false, features = [ "clipboard", "links" ] }
 glutin = { package = "glutin_tao", version = "0.31.0" }
-winit = { package = "tao", version = "0.17", default-features = false }
+winit = { package = "tao", version = "0.18.0", default-features = false }
 puffin = { version = "0.13", optional = true }
 directories-next = { version = "2", optional = true }
 
