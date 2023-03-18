@@ -37,7 +37,7 @@ serde = [ "egui/serde", "dep:serde" ]
 egui = { version = "0.19.0", path = "../egui", default-features = false, features = [ "tracing" ] }
 instant = { version = "0.1", features = [ "wasm-bindgen" ] }
 tracing = { version = "0.1", default-features = false, features = [ "std" ] }
-winit = { package = "tao", version = "0.17", default-features = false }
+winit = { package = "tao", version = "0.18.0", default-features = false }
 document-features = { version = "0.2", optional = true }
 puffin = { version = "0.13", optional = true }
 serde = { version = "1.0", optional = true, features = [ "derive" ] }
