@@ -1,5 +1,5 @@
 [package]
-name = "eframe"
+name = "eframe_tao"
 version = "0.21.3"
 authors = ["Emil Ernerfeldt <emil.ernerfeldt@gmail.com>"]
 description = "egui framework - write GUI apps that compiles to web and/or natively"
@@ -24,13 +24,10 @@ all-features = true
 targets = ["x86_64-unknown-linux-gnu", "wasm32-unknown-unknown"]
 
 [lib]
-
+name = "eframe"
 
 [features]
-default = ["accesskit", "default_fonts", "glow"]
-
-## Enable platform accessibility API implementations through [AccessKit](https://accesskit.dev/).
-accesskit = ["egui/accesskit", "egui-winit/accesskit"]
+default = ["default_fonts", "glow"]
 
 ## If set, egui will use `include_bytes!` to bundle some fonts.
 ## If you plan on specifying your own fonts you may disable this feature.
@@ -38,9 +35,6 @@ default_fonts = ["egui/default_fonts"]
 
 ## Use [`glow`](https://github.com/grovesNL/glow) for painting, via [`egui_glow`](https://github.com/emilk/egui/tree/master/crates/egui_glow).
 glow = ["dep:glow", "dep:egui_glow", "dep:glutin", "dep:glutin-winit"]
-
-## Enables wayland support and fixes clipboard issue.
-wayland = ["egui-winit/wayland"]
 
 ## Enable saving app state to disk.
 persistence = [
@@ -75,11 +69,6 @@ wgpu = ["dep:wgpu", "dep:egui-wgpu", "dep:pollster", "dep:raw-window-handle"]
 #   rely on Winit to pull in a suitable version (unlike most Rust crates, any version conflicts won't link)
 # - It's also important that we don't impose an android-activity backend by taking this choice away from applications.
 
-## Enable the `native-activity` backend via `egui-winit` on Android
-android-native-activity = ["egui-winit/android-native-activity"]
-## Enable the `game-activity` backend via `egui-winit` on Android
-android-game-activity = ["egui-winit/android-game-activity"]
-
 [dependencies]
 egui = { version = "0.21.0", path = "../egui", default-features = false, features = [
   "bytemuck",
@@ -92,7 +81,7 @@ thiserror.workspace = true
 ## Enable this when generating docs.
 document-features = { version = "0.2", optional = true }
 
-egui_glow = { version = "0.21.0", path = "../egui_glow", optional = true, default-features = false }
+egui_glow = { package = "egui_glow_tao", version = "0.21.0", path = "../egui_glow", optional = true, default-features = false }
 glow = { version = "0.12", optional = true }
 ron = { version = "0.8", optional = true, features = ["integer128"] }
 serde = { version = "1", optional = true, features = ["derive"] }
@@ -100,7 +89,7 @@ serde = { version = "1", optional = true, features = ["derive"] }
 # -------------------------------------------
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-egui-winit = { version = "0.21.1", path = "../egui-winit", default-features = false, features = [
+egui-winit = { package = "egui-tao", version = "0.21.1", path = "../egui-winit", default-features = false, features = [
   "clipboard",
   "links",
 ] }
@@ -108,7 +97,7 @@ image = { version = "0.24", default-features = false, features = [
   "png",
 ] } # Needed for app icon
 raw-window-handle = { version = "0.5.0" }
-winit = "0.28.1"
+winit = { package = "tao", version = "0.18.0", default-features = false }
 
 # optional native:
 directories-next = { version = "2", optional = true }
@@ -119,7 +108,7 @@ pollster = { version = "0.3", optional = true } # needed for wgpu
 
 # we can expose these to user so that they can select which backends they want to enable to avoid compiling useless deps.
 # this can be done at the same time we expose x11/wayland features of winit crate.
-glutin = { version = "0.30", optional = true }
+glutin = { package = "glutin_tao", version = "0.32.0", optional = true }
 glutin-winit = { version = "0.3.0", optional = true }
 puffin = { version = "0.14", optional = true }
 wgpu = { version = "0.16.0", optional = true }
