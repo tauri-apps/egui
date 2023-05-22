@@ -1,5 +1,4 @@
-use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 use crate::{
     mutex::{Mutex, MutexGuard},
@@ -68,12 +67,13 @@ impl std::hash::Hash for FontId {
 ///
 /// Which style of font: [`Monospace`][`FontFamily::Monospace`], [`Proportional`][`FontFamily::Proportional`],
 /// or by user-chosen name.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub enum FontFamily {
     /// A font where some characters are wider than other (e.g. 'w' is wider than 'i').
     ///
     /// Proportional fonts are easier to read and should be the preferred choice in most situations.
+    #[default]
     Proportional,
 
     /// A font where each character is the same width (`w` is the same width as `i`).
@@ -90,13 +90,6 @@ pub enum FontFamily {
     /// FontFamily::Name("serif".into());
     /// ```
     Name(Arc<str>),
-}
-
-impl Default for FontFamily {
-    #[inline]
-    fn default() -> Self {
-        FontFamily::Proportional
-    }
 }
 
 impl std::fmt::Display for FontFamily {
@@ -154,12 +147,14 @@ impl FontData {
 #[derive(Copy, Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct FontTweak {
-    /// Scale the font by this much.
+    /// Scale the font's glyphs by this much.
+    /// this is only a visual effect and does not affect the text layout.
     ///
     /// Default: `1.0` (no scaling).
     pub scale: f32,
 
-    /// Shift font downwards by this fraction of the font size (in points).
+    /// Shift font's glyphs downwards by this fraction of the font size (in points).
+    /// this is only a visual effect and does not affect the text layout.
     ///
     /// A positive value shifts the text downwards.
     /// A negative value shifts it upwards.
@@ -167,18 +162,27 @@ pub struct FontTweak {
     /// Example value: `-0.2`.
     pub y_offset_factor: f32,
 
-    /// Shift font downwards by this amount of logical points.
+    /// Shift font's glyphs downwards by this amount of logical points.
+    /// this is only a visual effect and does not affect the text layout.
     ///
     /// Example value: `2.0`.
     pub y_offset: f32,
+
+    /// When using this font's metrics to layout a row,
+    /// shift the entire row downwards by this fraction of the font size (in points).
+    ///
+    /// A positive value shifts the text downwards.
+    /// A negative value shifts it upwards.
+    pub baseline_offset_factor: f32,
 }
 
 impl Default for FontTweak {
     fn default() -> Self {
         Self {
             scale: 1.0,
-            y_offset_factor: -0.2, // makes the default fonts look more centered in buttons and such
+            y_offset_factor: 0.0,
             y_offset: 0.0,
+            baseline_offset_factor: -0.0333, // makes the default fonts look more centered in buttons and such
         }
     }
 }
@@ -271,7 +275,12 @@ impl Default for FontDefinitions {
         // Some good looking emojis. Use as first priority:
         font_data.insert(
             "NotoEmoji-Regular".to_owned(),
-            FontData::from_static(include_bytes!("../../fonts/NotoEmoji-Regular.ttf")),
+            FontData::from_static(include_bytes!("../../fonts/NotoEmoji-Regular.ttf")).tweak(
+                FontTweak {
+                    scale: 0.81, // make it smaller
+                    ..Default::default()
+                },
+            ),
         );
 
         // Bigger emojis, and more. <http://jslegers.github.io/emoji-icon-font/>:
@@ -279,9 +288,12 @@ impl Default for FontDefinitions {
             "emoji-icon-font".to_owned(),
             FontData::from_static(include_bytes!("../../fonts/emoji-icon-font.ttf")).tweak(
                 FontTweak {
-                    scale: 0.8,            // make it smaller
-                    y_offset_factor: 0.07, // move it down slightly
-                    y_offset: 0.0,
+                    scale: 0.88, // make it smaller
+
+                    // probably not correct, but this does make texts look better (#2724 for details)
+                    y_offset_factor: 0.11, // move glyphs down to better align with common fonts
+                    baseline_offset_factor: -0.11, // ...now the entire row is a bit down so shift it back
+                    ..Default::default()
                 },
             ),
         );
@@ -425,6 +437,17 @@ impl Fonts {
         self.lock().fonts.glyph_width(font_id, c)
     }
 
+    /// Can we display this glyph?
+    #[inline]
+    pub fn has_glyph(&self, font_id: &FontId, c: char) -> bool {
+        self.lock().fonts.has_glyph(font_id, c)
+    }
+
+    /// Can we display all the glyphs in this text?
+    pub fn has_glyphs(&self, font_id: &FontId, s: &str) -> bool {
+        self.lock().fonts.has_glyphs(font_id, s)
+    }
+
     /// Height of one row of text in points
     #[inline]
     pub fn row_height(&self, font_id: &FontId) -> f32 {
@@ -526,6 +549,21 @@ impl FontsAndCache {
 
 // ----------------------------------------------------------------------------
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct HashableF32(f32);
+
+#[allow(clippy::derive_hash_xor_eq)]
+impl std::hash::Hash for HashableF32 {
+    #[inline(always)]
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        crate::f32_hash(state, self.0);
+    }
+}
+
+impl Eq for HashableF32 {}
+
+// ----------------------------------------------------------------------------
+
 /// The collection of fonts used by `epaint`.
 ///
 /// Required in order to paint text.
@@ -535,7 +573,7 @@ pub struct FontsImpl {
     definitions: FontDefinitions,
     atlas: Arc<Mutex<TextureAtlas>>,
     font_impl_cache: FontImplCache,
-    sized_family: ahash::HashMap<(u32, FontFamily), Font>,
+    sized_family: ahash::HashMap<(HashableF32, FontFamily), Font>,
 }
 
 impl FontsImpl {
@@ -584,10 +622,9 @@ impl FontsImpl {
     /// Get the right font implementation from size and [`FontFamily`].
     pub fn font(&mut self, font_id: &FontId) -> &mut Font {
         let FontId { size, family } = font_id;
-        let scale_in_pixels = self.font_impl_cache.scale_as_pixels(*size);
 
         self.sized_family
-            .entry((scale_in_pixels, family.clone()))
+            .entry((HashableF32(*size), family.clone()))
             .or_insert_with(|| {
                 let fonts = &self.definitions.families.get(family);
                 let fonts = fonts.unwrap_or_else(|| {
@@ -596,7 +633,7 @@ impl FontsImpl {
 
                 let fonts: Vec<Arc<FontImpl>> = fonts
                     .iter()
-                    .map(|font_name| self.font_impl_cache.font_impl(scale_in_pixels, font_name))
+                    .map(|font_name| self.font_impl_cache.font_impl(*size, font_name))
                     .collect();
 
                 Font::new(fonts)
@@ -606,6 +643,16 @@ impl FontsImpl {
     /// Width of this character in points.
     fn glyph_width(&mut self, font_id: &FontId, c: char) -> f32 {
         self.font(font_id).glyph_width(c)
+    }
+
+    /// Can we display this glyph?
+    pub fn has_glyph(&mut self, font_id: &FontId, c: char) -> bool {
+        self.font(font_id).has_glyph(c)
+    }
+
+    /// Can we display all the glyphs in this text?
+    pub fn has_glyphs(&mut self, font_id: &FontId, s: &str) -> bool {
+        self.font(font_id).has_glyphs(s)
     }
 
     /// Height of one row of text. In points
@@ -699,31 +746,32 @@ impl FontImplCache {
         }
     }
 
-    #[inline]
-    pub fn scale_as_pixels(&self, scale_in_points: f32) -> u32 {
-        let scale_in_pixels = self.pixels_per_point * scale_in_points;
+    pub fn font_impl(&mut self, scale_in_points: f32, font_name: &str) -> Arc<FontImpl> {
+        use ab_glyph::Font as _;
 
-        // Round to an even number of physical pixels to get even kerning.
-        // See https://github.com/emilk/egui/issues/382
-        scale_in_pixels.round() as u32
-    }
-
-    pub fn font_impl(&mut self, scale_in_pixels: u32, font_name: &str) -> Arc<FontImpl> {
         let (tweak, ab_glyph_font) = self
             .ab_glyph_fonts
             .get(font_name)
             .unwrap_or_else(|| panic!("No font data found for {:?}", font_name))
             .clone();
 
-        let scale_in_pixels = (scale_in_pixels as f32 * tweak.scale).round() as u32;
+        let scale_in_pixels = self.pixels_per_point * scale_in_points;
 
-        let y_offset_points = {
-            let scale_in_points = scale_in_pixels as f32 / self.pixels_per_point;
-            scale_in_points * tweak.y_offset_factor
-        } + tweak.y_offset;
+        // Scale the font properly (see https://github.com/emilk/egui/issues/2068).
+        let units_per_em = ab_glyph_font.units_per_em().unwrap_or_else(|| {
+            panic!(
+                "The font unit size of {:?} exceeds the expected range (16..=16384)",
+                font_name
+            )
+        });
+        let font_scaling = ab_glyph_font.height_unscaled() / units_per_em;
+        let scale_in_pixels = scale_in_pixels * font_scaling;
 
         self.cache
-            .entry((scale_in_pixels, font_name.to_owned()))
+            .entry((
+                (scale_in_pixels * tweak.scale).round() as u32,
+                font_name.to_owned(),
+            ))
             .or_insert_with(|| {
                 Arc::new(FontImpl::new(
                     self.atlas.clone(),
@@ -731,7 +779,7 @@ impl FontImplCache {
                     font_name.to_owned(),
                     ab_glyph_font,
                     scale_in_pixels,
-                    y_offset_points,
+                    tweak,
                 ))
             })
             .clone()

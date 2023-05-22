@@ -2,27 +2,44 @@
 
 #![allow(clippy::missing_errors_doc)] // So many `-> Result<_, JsValue>`
 
+mod app_runner;
 pub mod backend;
 mod events;
-mod glow_wrapping;
 mod input;
+mod panic_handler;
 pub mod screen_reader;
 pub mod storage;
 mod text_agent;
+mod web_logger;
+mod web_runner;
+
+pub(crate) use app_runner::AppRunner;
+pub use panic_handler::{PanicHandler, PanicSummary};
+pub use web_logger::WebLogger;
+pub use web_runner::WebRunner;
+
+#[cfg(not(any(feature = "glow", feature = "wgpu")))]
+compile_error!("You must enable either the 'glow' or 'wgpu' feature");
+
+mod web_painter;
+
+#[cfg(feature = "glow")]
+mod web_painter_glow;
+#[cfg(feature = "glow")]
+pub(crate) type ActiveWebPainter = web_painter_glow::WebPainterGlow;
+
+#[cfg(feature = "wgpu")]
+mod web_painter_wgpu;
+#[cfg(all(feature = "wgpu", not(feature = "glow")))]
+pub(crate) type ActiveWebPainter = web_painter_wgpu::WebPainterWgpu;
 
 pub use backend::*;
 pub use events::*;
 pub use storage::*;
 
-use std::collections::BTreeMap;
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
-
 use egui::Vec2;
 use wasm_bindgen::prelude::*;
-use web_sys::EventTarget;
+use web_sys::MediaQueryList;
 
 use input::*;
 
@@ -61,15 +78,25 @@ pub fn native_pixels_per_point() -> f32 {
 }
 
 pub fn system_theme() -> Option<Theme> {
-    let dark_mode = web_sys::window()?
-        .match_media("(prefers-color-scheme: dark)")
+    let dark_mode = prefers_color_scheme_dark(&web_sys::window()?)
         .ok()??
         .matches();
-    Some(if dark_mode { Theme::Dark } else { Theme::Light })
+    Some(theme_from_dark_mode(dark_mode))
+}
+
+fn prefers_color_scheme_dark(window: &web_sys::Window) -> Result<Option<MediaQueryList>, JsValue> {
+    window.match_media("(prefers-color-scheme: dark)")
+}
+
+fn theme_from_dark_mode(dark_mode: bool) -> Theme {
+    if dark_mode {
+        Theme::Dark
+    } else {
+        Theme::Light
+    }
 }
 
 pub fn canvas_element(canvas_id: &str) -> Option<web_sys::HtmlCanvasElement> {
-    use wasm_bindgen::JsCast;
     let document = web_sys::window()?.document()?;
     let canvas = document.get_element_by_id(canvas_id)?;
     canvas.dyn_into::<web_sys::HtmlCanvasElement>().ok()
@@ -77,7 +104,7 @@ pub fn canvas_element(canvas_id: &str) -> Option<web_sys::HtmlCanvasElement> {
 
 pub fn canvas_element_or_die(canvas_id: &str) -> web_sys::HtmlCanvasElement {
     canvas_element(canvas_id)
-        .unwrap_or_else(|| panic!("Failed to find canvas with id '{}'", canvas_id))
+        .unwrap_or_else(|| panic!("Failed to find canvas with id {:?}", canvas_id))
 }
 
 fn canvas_origin(canvas_id: &str) -> egui::Pos2 {
@@ -100,8 +127,10 @@ pub fn resize_canvas_to_screen_size(canvas_id: &str, max_size_points: egui::Vec2
     let canvas = canvas_element(canvas_id)?;
     let parent = canvas.parent_element()?;
 
-    let width = parent.scroll_width();
-    let height = parent.scroll_height();
+    // Prefer the client width and height so that if the parent
+    // element is resized that the egui canvas resizes appropriately.
+    let width = parent.client_width();
+    let height = parent.client_height();
 
     let canvas_real_size = Vec2 {
         x: width as f32,
@@ -109,7 +138,7 @@ pub fn resize_canvas_to_screen_size(canvas_id: &str, max_size_points: egui::Vec2
     };
 
     if width <= 0 || height <= 0 {
-        tracing::error!("egui canvas parent size is {}x{}. Try adding `html, body {{ height: 100%; width: 100% }}` to your CSS!", width, height);
+        log::error!("egui canvas parent size is {}x{}. Try adding `html, body {{ height: 100%; width: 100% }}` to your CSS!", width, height);
     }
 
     let pixels_per_point = native_pixels_per_point();
@@ -166,7 +195,7 @@ pub fn set_clipboard_text(s: &str) {
             let future = wasm_bindgen_futures::JsFuture::from(promise);
             let future = async move {
                 if let Err(err) = future.await {
-                    tracing::error!("Copy/cut action denied: {:?}", err);
+                    log::error!("Copy/cut action failed: {err:?}");
                 }
             };
             wasm_bindgen_futures::spawn_local(future);
@@ -242,48 +271,4 @@ pub fn percent_decode(s: &str) -> String {
     percent_encoding::percent_decode_str(s)
         .decode_utf8_lossy()
         .to_string()
-}
-
-// ----------------------------------------------------------------------------
-
-pub(crate) fn webgl1_requires_brightening(gl: &web_sys::WebGlRenderingContext) -> bool {
-    // See https://github.com/emilk/egui/issues/794
-
-    // detect WebKitGTK
-
-    // WebKitGTK use WebKit default unmasked vendor and renderer
-    // but safari use same vendor and renderer
-    // so exclude "Mac OS X" user-agent.
-    let user_agent = web_sys::window().unwrap().navigator().user_agent().unwrap();
-    !user_agent.contains("Mac OS X") && is_safari_and_webkit_gtk(gl)
-}
-
-/// detecting Safari and `webkitGTK`.
-///
-/// Safari and `webkitGTK` use unmasked renderer :Apple GPU
-///
-/// If we detect safari or `webkitGTKs` returns true.
-///
-/// This function used to avoid displaying linear color with `sRGB` supported systems.
-fn is_safari_and_webkit_gtk(gl: &web_sys::WebGlRenderingContext) -> bool {
-    // This call produces a warning in Firefox ("WEBGL_debug_renderer_info is deprecated in Firefox and will be removed.")
-    // but unless we call it we get errors in Chrome when we call `get_parameter` below.
-    // TODO(emilk): do something smart based on user agent?
-    if gl
-        .get_extension("WEBGL_debug_renderer_info")
-        .unwrap()
-        .is_some()
-    {
-        if let Ok(renderer) =
-            gl.get_parameter(web_sys::WebglDebugRendererInfo::UNMASKED_RENDERER_WEBGL)
-        {
-            if let Some(renderer) = renderer.as_string() {
-                if renderer.contains("Apple") {
-                    return true;
-                }
-            }
-        }
-    }
-
-    false
 }

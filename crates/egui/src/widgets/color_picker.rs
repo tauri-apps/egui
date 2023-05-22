@@ -2,7 +2,7 @@
 
 use crate::util::fixed_cache::FixedCache;
 use crate::*;
-use epaint::{color::*, *};
+use epaint::{ecolor::*, *};
 
 fn contrast_color(color: impl Into<Rgba>) -> Color32 {
     if color.into().intensity() < 0.5 {
@@ -155,6 +155,12 @@ fn color_slider_1d(ui: &mut Ui, value: &mut f32, color_at: impl Fn(f32) -> Color
     response
 }
 
+/// # Arguments
+/// * `x_value` - X axis, either saturation or value (0.0-1.0).
+/// * `y_value` - Y axis, either saturation or value (0.0-1.0).
+/// * `color_at` - A function that dictates how the mix of saturation and value will be displayed in the 2d slider.
+/// E.g.: `|x_value, y_value| HsvaGamma { h: 1.0, s: x_value, v: y_value, a: 1.0 }.into()` displays the colors as follows: top-left: white \[s: 0.0, v: 1.0], top-right: fully saturated color \[s: 1.0, v: 1.0], bottom-right: black \[s: 0.0, v: 1.0].
+///
 fn color_slider_2d(
     ui: &mut Ui,
     x_value: &mut f32,
@@ -211,7 +217,7 @@ fn color_slider_2d(
 }
 
 /// What options to show for alpha
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Alpha {
     // Set alpha to 1.0, and show no option for it.
     Opaque,
@@ -228,9 +234,9 @@ fn color_text_ui(ui: &mut Ui, color: impl Into<Color32>, alpha: Alpha) {
 
         if ui.button("📋").on_hover_text("Click to copy").clicked() {
             if alpha == Alpha::Opaque {
-                ui.output().copied_text = format!("{}, {}, {}", r, g, b);
+                ui.output_mut(|o| o.copied_text = format!("{}, {}, {}", r, g, b));
             } else {
-                ui.output().copied_text = format!("{}, {}, {}, {}", r, g, b, a);
+                ui.output_mut(|o| o.copied_text = format!("{}, {}, {}, {}", r, g, b, a));
             }
         }
 
@@ -308,7 +314,7 @@ fn color_picker_hsvag_2d(ui: &mut Ui, hsva: &mut HsvaGamma, alpha: Alpha) {
         color_slider_1d(ui, v, |v| HsvaGamma { v, ..opaque }.into()).on_hover_text("Value");
     }
 
-    color_slider_2d(ui, v, s, |v, s| HsvaGamma { s, v, ..opaque }.into());
+    color_slider_2d(ui, s, v, |s, v| HsvaGamma { s, v, ..opaque }.into());
 }
 
 //// Shows a color picker where the user can change the given [`Hsva`] color.
@@ -341,22 +347,26 @@ pub fn color_picker_color32(ui: &mut Ui, srgba: &mut Color32, alpha: Alpha) -> b
 
 pub fn color_edit_button_hsva(ui: &mut Ui, hsva: &mut Hsva, alpha: Alpha) -> Response {
     let popup_id = ui.auto_id_with("popup");
-    let open = ui.memory().is_popup_open(popup_id);
+    let open = ui.memory(|mem| mem.is_popup_open(popup_id));
     let mut button_response = color_button(ui, (*hsva).into(), open);
     if ui.style().explanation_tooltips {
         button_response = button_response.on_hover_text("Click to edit color");
     }
 
     if button_response.clicked() {
-        ui.memory().toggle_popup(popup_id);
+        ui.memory_mut(|mem| mem.toggle_popup(popup_id));
     }
+
+    const COLOR_SLIDER_WIDTH: f32 = 210.0;
+
     // TODO(emilk): make it easier to show a temporary popup that closes when you click outside it
-    if ui.memory().is_popup_open(popup_id) {
+    if ui.memory(|mem| mem.is_popup_open(popup_id)) {
         let area_response = Area::new(popup_id)
             .order(Order::Foreground)
-            .current_pos(button_response.rect.max)
+            .fixed_pos(button_response.rect.max)
+            .constrain(true)
             .show(ui.ctx(), |ui| {
-                ui.spacing_mut().slider_width = 210.0;
+                ui.spacing_mut().slider_width = COLOR_SLIDER_WIDTH;
                 Frame::popup(ui.style()).show(ui, |ui| {
                     if color_picker_hsva_2d(ui, hsva, alpha) {
                         button_response.mark_changed();
@@ -366,9 +376,9 @@ pub fn color_edit_button_hsva(ui: &mut Ui, hsva: &mut Hsva, alpha: Alpha) -> Res
             .response;
 
         if !button_response.clicked()
-            && (ui.input().key_pressed(Key::Escape) || area_response.clicked_elsewhere())
+            && (ui.input(|i| i.key_pressed(Key::Escape)) || area_response.clicked_elsewhere())
         {
-            ui.memory().close_popup();
+            ui.memory_mut(|mem| mem.close_popup());
         }
     }
 
@@ -421,7 +431,7 @@ pub fn color_edit_button_rgb(ui: &mut Ui, rgb: &mut [f32; 3]) -> Response {
 // To ensure we keep hue slider when `srgba` is gray we store the full [`Hsva`] in a cache:
 fn color_cache_get(ctx: &Context, rgba: impl Into<Rgba>) -> Hsva {
     let rgba = rgba.into();
-    use_color_cache(ctx, |cc| cc.get(&rgba).cloned()).unwrap_or_else(|| Hsva::from(rgba))
+    use_color_cache(ctx, |cc| cc.get(&rgba).copied()).unwrap_or_else(|| Hsva::from(rgba))
 }
 
 // To ensure we keep hue slider when `srgba` is gray we store the full [`Hsva`] in a cache:
@@ -432,5 +442,5 @@ fn color_cache_set(ctx: &Context, rgba: impl Into<Rgba>, hsva: Hsva) {
 
 // To ensure we keep hue slider when `srgba` is gray we store the full [`Hsva`] in a cache:
 fn use_color_cache<R>(ctx: &Context, f: impl FnOnce(&mut FixedCache<Rgba, Hsva>) -> R) -> R {
-    f(ctx.data().get_temp_mut_or_default(Id::null()))
+    ctx.data_mut(|d| f(d.get_temp_mut_or_default(Id::null())))
 }

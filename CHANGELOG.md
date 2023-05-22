@@ -5,6 +5,111 @@ NOTE: [`epaint`](crates/epaint/CHANGELOG.md), [`eframe`](crates/eframe/CHANGELOG
 
 
 ## Unreleased
+* Add `char_limit` to `TextEdit` singleline mode to limit the amount of characters
+* ⚠️ BREAKING: `Plot::link_axis` and `Plot::link_cursor` now take the name of the group ([#2410](https://github.com/emilk/egui/pull/2410)).
+* Update `Plot::allow_zoom` and `Plot::allow_drag` to allow setting those values for X and Y axes independently ([#2901](https://github.com/emilk/egui/pull/2901)).
+
+## 0.21.0 - 2023-02-08 - Deadlock fix and style customizability
+* ⚠️ BREAKING: `egui::Context` now use closures for locking ([#2625](https://github.com/emilk/egui/pull/2625)):
+  * `ctx.input().key_pressed(Key::A)` -> `ctx.input(|i| i.key_pressed(Key::A))`
+  * `ui.memory().toggle_popup(popup_id)` -> `ui.memory_mut(|mem| mem.toggle_popup(popup_id))`
+
+### Added ⭐
+* Add `Response::drag_started_by` and `Response::drag_released_by` for convenience, similar to `dragged` and `dragged_by` ([#2507](https://github.com/emilk/egui/pull/2507)).
+* Add `PointerState::*_pressed` to check if the given button was pressed in this frame ([#2507](https://github.com/emilk/egui/pull/2507)).
+* `Event::Key` now has a `repeat` field that is set to `true` if the event was the result of a key-repeat ([#2435](https://github.com/emilk/egui/pull/2435)).
+* Add `Slider::drag_value_speed`, which lets you ask for finer precision when dragging the slider value rather than the actual slider.
+* Add `Memory::any_popup_open`, which returns true if any popup is currently open ([#2464](https://github.com/emilk/egui/pull/2464)).
+* Add `Plot::clamp_grid` to only show grid where there is data ([#2480](https://github.com/emilk/egui/pull/2480)).
+* Add `ScrollArea::drag_to_scroll` if you want to turn off that feature.
+* Add `Response::on_hover_and_drag_cursor`.
+* Add `Window::default_open` ([#2539](https://github.com/emilk/egui/pull/2539)).
+* Add `ProgressBar::fill` if you want to set the fill color manually. ([#2618](https://github.com/emilk/egui/pull/2618)).
+* Add `Button::rounding` to enable round buttons ([#2616](https://github.com/emilk/egui/pull/2616)).
+* Add `WidgetVisuals::optional_bg_color` - set it to `Color32::TRANSPARENT` to hide button backgrounds ([#2621](https://github.com/emilk/egui/pull/2621)).
+* Add `Context::screen_rect` and `Context::set_cursor_icon` ([#2625](https://github.com/emilk/egui/pull/2625)).
+* You can turn off the vertical line left of indented regions with `Visuals::indent_has_left_vline` ([#2636](https://github.com/emilk/egui/pull/2636)).
+* Add `Response.highlight` to highlight a widget ([#2632](https://github.com/emilk/egui/pull/2632)).
+* Add `Separator::grow` and `Separator::shrink` ([#2665](https://github.com/emilk/egui/pull/2665)).
+* Add `Slider::trailing_fill` for trailing color behind the circle like a `ProgressBar` ([#2660](https://github.com/emilk/egui/pull/2660)).
+
+### Changed 🔧
+* Improved plot grid appearance ([#2412](https://github.com/emilk/egui/pull/2412)).
+* Improved the algorithm for picking the number of decimals to show when hovering values in the `Plot`.
+* Default `ComboBox` is now controlled with `Spacing::combo_width` ([#2621](https://github.com/emilk/egui/pull/2621)).
+* `DragValue` and `Slider` now use the proportional font ([#2638](https://github.com/emilk/egui/pull/2638)).
+* `ScrollArea` is less aggressive about clipping its contents ([#2665](https://github.com/emilk/egui/pull/2665)).
+* Updated to be compatible with a major breaking change in AccessKit that drastically reduces memory usage when accessibility is enabled ([#2678](https://github.com/emilk/egui/pull/2678)).
+* Improve `DragValue` behavior ([#2649](https://github.com/emilk/egui/pull/2649), [#2650](https://github.com/emilk/egui/pull/2650), [#2688](https://github.com/emilk/egui/pull/2688), [#2638](https://github.com/emilk/egui/pull/2638)).
+
+### Fixed 🐛
+* Trigger `PointerEvent::Released` for drags ([#2507](https://github.com/emilk/egui/pull/2507)).
+* Expose `TextEdit`'s multiline flag to AccessKit ([#2448](https://github.com/emilk/egui/pull/2448)).
+* Don't render `\r` (Carriage Return) ([#2452](https://github.com/emilk/egui/pull/2452)).
+* The `button_padding` style option works closer as expected with image+text buttons now ([#2510](https://github.com/emilk/egui/pull/2510)).
+* Menus are now moved to fit on the screen.
+* Fix `Window::pivot` causing windows to move around ([#2694](https://github.com/emilk/egui/pull/2694)).
+
+
+## 0.20.1 - 2022-12-11 - Fix key-repeat
+### Changed 🔧
+* `InputState`: all press functions again include key repeats (like in egui 0.19) ([#2429](https://github.com/emilk/egui/pull/2429)).
+* Improve the look of thin white lines ([#2437](https://github.com/emilk/egui/pull/2437)).
+
+### Fixed 🐛
+* Fix key-repeats for `TextEdit`, `Slider`s, etc ([#2429](https://github.com/emilk/egui/pull/2429)).
+
+
+## 0.20.0 - 2022-12-08 - AccessKit, prettier text, overlapping widgets
+* MSRV (Minimum Supported Rust Version) is now `1.65.0` ([#2314](https://github.com/emilk/egui/pull/2314)).
+* ⚠️ BREAKING: egui now expects integrations to do all color blending in gamma space ([#2071](https://github.com/emilk/egui/pull/2071)).
+* ⚠️ BREAKING: if you have overlapping interactive widgets, only the top widget (last added) will be interactive ([#2244](https://github.com/emilk/egui/pull/2244)).
+
+### Added ⭐
+* Added helper functions for animating panels that collapse/expand ([#2190](https://github.com/emilk/egui/pull/2190)).
+* Added `Context::os/Context::set_os` to query/set what operating system egui believes it is running on ([#2202](https://github.com/emilk/egui/pull/2202)).
+* Added `Button::shortcut_text` for showing keyboard shortcuts in menu buttons ([#2202](https://github.com/emilk/egui/pull/2202)).
+* Added `egui::KeyboardShortcut` for showing keyboard shortcuts in menu buttons ([#2202](https://github.com/emilk/egui/pull/2202)).
+* Texture loading now takes a `TexureOptions` with minification and magnification filters ([#2224](https://github.com/emilk/egui/pull/2224)).
+* Added `Key::Minus` and `Key::Equals` ([#2239](https://github.com/emilk/egui/pull/2239)).
+* Added `egui::gui_zoom` module with helpers for scaling the whole GUI of an app ([#2239](https://github.com/emilk/egui/pull/2239)).
+* You can now put one interactive widget on top of another, and only one will get interaction at a time ([#2244](https://github.com/emilk/egui/pull/2244)).
+* Added `spacing.menu_margin` for customizing menu spacing ([#2036](https://github.com/emilk/egui/pull/2036))
+* Added possibility to enable text wrap for the selected text of `egui::ComboBox` ([#2272](https://github.com/emilk/egui/pull/2272))
+* Added `Area::constrain` and `Window::constrain` which constrains area to the screen bounds ([#2270](https://github.com/emilk/egui/pull/2270)).
+* Added `Area::pivot` and `Window::pivot` which controls what part of the window to position ([#2303](https://github.com/emilk/egui/pull/2303)).
+* Added support for [thin space](https://en.wikipedia.org/wiki/Thin_space).
+* Added optional integration with [AccessKit](https://accesskit.dev/) for implementing platform accessibility APIs ([#2294](https://github.com/emilk/egui/pull/2294)).
+* Added `panel_fill`, `window_fill` and `window_stroke` to `Visuals` for your theming pleasure ([#2406](https://github.com/emilk/egui/pull/2406)).
+* Plots:
+  * Allow linking plot cursors ([#1722](https://github.com/emilk/egui/pull/1722)).
+  * Added `Plot::auto_bounds_x/y` and `Plot::reset` ([#2029](https://github.com/emilk/egui/pull/2029)).
+  * Added `PlotUi::translate_bounds` ([#2145](https://github.com/emilk/egui/pull/2145)).
+  * Added `PlotUi::set_plot_bounds` ([#2320](https://github.com/emilk/egui/pull/2320)).
+  * Added `PlotUi::plot_secondary_clicked` ([#2318](https://github.com/emilk/egui/pull/2318)).
+
+### Changed 🔧
+* Panels always have a separator line, but no stroke on other sides. Their spacing has also changed slightly ([#2261](https://github.com/emilk/egui/pull/2261)).
+* Tooltips are only shown when mouse pointer is still ([#2263](https://github.com/emilk/egui/pull/2263)).
+* Make it slightly easier to click buttons ([#2304](https://github.com/emilk/egui/pull/2304)).
+* `egui::color` has been renamed `egui::ecolor` ([#2399](https://github.com/emilk/egui/pull/2399)).
+
+### Fixed 🐛
+* ⚠️ BREAKING: Fix text being too small ([#2069](https://github.com/emilk/egui/pull/2069)).
+* Improve mixed CJK/Latin line-breaking ([#1986](https://github.com/emilk/egui/pull/1986)).
+* Improved text rendering ([#2071](https://github.com/emilk/egui/pull/2071)).
+* Constrain menu popups to the screen ([#2191](https://github.com/emilk/egui/pull/2191)).
+* Less jitter when calling `Context::set_pixels_per_point` ([#2239](https://github.com/emilk/egui/pull/2239)).
+* Fixed popups and color edit going outside the screen.
+* Fixed keyboard support in `DragValue` ([#2342](https://github.com/emilk/egui/pull/2342)).
+* If you nest `ScrollAreas` inside each other, the inner area will now move its scroll bar so it is always visible ([#2371](https://github.com/emilk/egui/pull/2371)).
+* Ignore key-repeats for `input.key_pressed` ([#2334](https://github.com/emilk/egui/pull/2334), [#2389](https://github.com/emilk/egui/pull/2389)).
+* Fixed issue with calling `set_pixels_per_point` each frame ([#2352](https://github.com/emilk/egui/pull/2352)).
+* Fix bug in `ScrollArea::show_rows` ([#2258](https://github.com/emilk/egui/pull/2258)).
+* Fix bug in `plot::Line::fill` ([#2275](https://github.com/emilk/egui/pull/2275)).
+* Only emit `changed` events in `radio_value` and `selectable_value` if the value actually changed ([#2343](https://github.com/emilk/egui/pull/2343)).
+* Fixed sizing bug in `Grid` ([#2384](https://github.com/emilk/egui/pull/2384)).
+* `ComboBox::width` now correctly sets the outer width ([#2406](https://github.com/emilk/egui/pull/2406)).
 
 
 ## 0.19.0 - 2022-08-20
@@ -18,13 +123,14 @@ NOTE: [`epaint`](crates/epaint/CHANGELOG.md), [`eframe`](crates/eframe/CHANGELOG
 * You can now specify a texture filter for your textures ([#1636](https://github.com/emilk/egui/pull/1636)).
 * Added functions keys in `egui::Key` ([#1665](https://github.com/emilk/egui/pull/1665)).
 * Added support for using `PaintCallback` shapes with the WGPU backend ([#1684](https://github.com/emilk/egui/pull/1684)).
-* Added `Contex::request_repaint_after` ([#1694](https://github.com/emilk/egui/pull/1694)).
+* Added `Context::request_repaint_after` ([#1694](https://github.com/emilk/egui/pull/1694)).
 * `ctrl-h` now acts like backspace in `TextEdit` ([#1812](https://github.com/emilk/egui/pull/1812)).
 * Added `custom_formatter` method for `Slider` and `DragValue` ([#1851](https://github.com/emilk/egui/issues/1851)).
 * Added `RawInput::has_focus` which backends can set to indicate whether the UI as a whole has the keyboard focus ([#1859](https://github.com/emilk/egui/pull/1859)).
 * Added `PointerState::button_double_clicked()` and `PointerState::button_triple_clicked()` ([#1906](https://github.com/emilk/egui/issues/1906)).
+* Added `custom_formatter`, `binary`, `octal`, and `hexadecimal` to `DragValue` and `Slider` ([#1953](https://github.com/emilk/egui/issues/1953))
 
-### Changed
+### Changed 🔧
 * MSRV (Minimum Supported Rust Version) is now `1.61.0` ([#1846](https://github.com/emilk/egui/pull/1846)).
 * `PaintCallback` shapes now require the whole callback to be put in an `Arc<dyn Any>` with the value being a backend-specific callback type ([#1684](https://github.com/emilk/egui/pull/1684)).
 * Replaced `needs_repaint` in `FullOutput` with `repaint_after`. Used to force repaint after the set duration in reactive mode ([#1694](https://github.com/emilk/egui/pull/1694)).
@@ -286,7 +392,7 @@ NOTE: [`epaint`](crates/epaint/CHANGELOG.md), [`eframe`](crates/eframe/CHANGELOG
 * `Fonts::layout_job`: New text layout engine allowing mixing fonts, colors and styles, with underlining and strikethrough.
 * Added `ui.add_enabled(bool, widget)` to easily add a possibly disabled widget.
 * Added `ui.add_enabled_ui(bool, |ui| …)` to create a possibly disabled UI section.
-* Added feature `"serialize"` separatedly from `"persistence"`.
+* Added feature `"serialize"` separately from `"persistence"`.
 * Added `egui::widgets::global_dark_light_mode_buttons` to easily add buttons for switching the egui theme.
 * `TextEdit` can now be used to show text which can be selected and copied, but not edited.
 * Added `Memory::caches` for caching things from one frame to the next.
@@ -301,7 +407,7 @@ NOTE: [`epaint`](crates/epaint/CHANGELOG.md), [`eframe`](crates/eframe/CHANGELOG
 * MSRV (Minimum Supported Rust Version) is now `1.54.0`.
 * By default, `DragValue`s no longer show a tooltip when hovered. Change with `Style::explanation_tooltips`.
 * Smaller and nicer color picker.
-* `ScrollArea` will auto-shrink to content size unless told otherwise using `ScollArea::auto_shrink`.
+* `ScrollArea` will auto-shrink to content size unless told otherwise using `ScrollArea::auto_shrink`.
 * By default, `Slider`'s `clamp_to_range` is set to true.
 * Renamed `TextEdit::enabled` to `TextEdit::interactive`.
 * `ui.label` (and friends) now take `impl ToString` as argument instead of `impl Into<Label>`.
@@ -493,8 +599,8 @@ NOTE: [`epaint`](crates/epaint/CHANGELOG.md), [`eframe`](crates/eframe/CHANGELOG
 * Fixed bug that would close a popup (e.g. the color picker) when clicking inside of it.
 
 ### Deprecated ☢️
-* Deprectated `combo_box_with_label` in favor of new `ComboBox`.
-* Deprectated type-specific constructors for `Slider` and `DragValue` (`Slider::f32`, `DragValue::usize` etc).
+* Deprecated `combo_box_with_label` in favor of new `ComboBox`.
+* Deprecated type-specific constructors for `Slider` and `DragValue` (`Slider::f32`, `DragValue::usize` etc).
 
 
 ## 0.10.0 - 2021-02-28 - Plot and polish
@@ -582,7 +688,7 @@ NOTE: [`epaint`](crates/epaint/CHANGELOG.md), [`eframe`](crates/eframe/CHANGELOG
 
 ### Changed 🔧
 * Renamed `Srgba` to `Color32`.
-* All color contructions now starts with `from_`, e.g. `Color32::from_rgb`.
+* All color constructors now starts with `from_`, e.g. `Color32::from_rgb`.
 * Renamed `FontFamily::VariableWidth` to `FontFamily::Proportional`.
 * Removed `pixels_per_point` from `FontDefinitions`.
 

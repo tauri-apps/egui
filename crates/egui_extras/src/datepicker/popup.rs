@@ -1,10 +1,12 @@
-use super::{button::DatePickerButtonState, month_data};
-use crate::{Size, StripBuilder, TableBuilder};
-use chrono::{Date, Datelike, NaiveDate, Utc, Weekday};
+use chrono::{Datelike, NaiveDate, Weekday};
+
 use egui::{Align, Button, Color32, ComboBox, Direction, Id, Layout, RichText, Ui, Vec2};
 
-#[derive(Default, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+use super::{button::DatePickerButtonState, month_data};
+
+use crate::{Column, Size, StripBuilder, TableBuilder};
+
+#[derive(Default, Clone, serde::Deserialize, serde::Serialize)]
 struct DatePickerPopupState {
     year: i32,
     month: u32,
@@ -14,7 +16,8 @@ struct DatePickerPopupState {
 
 impl DatePickerPopupState {
     fn last_day_of_month(&self) -> u32 {
-        let date: Date<Utc> = Date::from_utc(NaiveDate::from_ymd(self.year, self.month, 1), Utc);
+        let date: NaiveDate =
+            NaiveDate::from_ymd_opt(self.year, self.month, 1).expect("Could not create NaiveDate");
         date.with_day(31)
             .map(|_| 31)
             .or_else(|| date.with_day(30).map(|_| 30))
@@ -24,7 +27,7 @@ impl DatePickerPopupState {
 }
 
 pub(crate) struct DatePickerPopup<'a> {
-    pub selection: &'a mut Date<Utc>,
+    pub selection: &'a mut NaiveDate,
     pub button_id: Id,
     pub combo_boxes: bool,
     pub arrows: bool,
@@ -33,24 +36,23 @@ pub(crate) struct DatePickerPopup<'a> {
 }
 
 impl<'a> DatePickerPopup<'a> {
-    pub fn draw(&mut self, ui: &mut Ui) {
+    /// Returns `true` if user pressed `Save` button.
+    pub fn draw(&mut self, ui: &mut Ui) -> bool {
         let id = ui.make_persistent_id("date_picker");
-        let today = chrono::offset::Utc::now().date();
+        let today = chrono::offset::Utc::now().date_naive();
         let mut popup_state = ui
-            .memory()
-            .data
-            .get_persisted::<DatePickerPopupState>(id)
+            .memory_mut(|mem| mem.data.get_persisted::<DatePickerPopupState>(id))
             .unwrap_or_default();
         if !popup_state.setup {
             popup_state.year = self.selection.year();
             popup_state.month = self.selection.month();
             popup_state.day = self.selection.day();
             popup_state.setup = true;
-            ui.memory().data.insert_persisted(id, popup_state.clone());
+            ui.memory_mut(|mem| mem.data.insert_persisted(id, popup_state.clone()));
         }
 
         let weeks = month_data(popup_state.year, popup_state.month);
-        let mut close = false;
+        let (mut close, mut saved) = (false, false);
         let height = 20.0;
         let spacing = 2.0;
         ui.spacing_mut().item_spacing = Vec2::splat(spacing);
@@ -66,7 +68,7 @@ impl<'a> DatePickerPopup<'a> {
             )
             .sizes(
                 Size::exact((spacing + height) * (weeks.len() + 1) as f32),
-                if self.calendar { 1 } else { 0 },
+                self.calendar as usize,
             )
             .size(Size::exact(height))
             .vertical(|mut strip| {
@@ -89,9 +91,10 @@ impl<'a> DatePickerPopup<'a> {
                                                 popup_state.day = popup_state
                                                     .day
                                                     .min(popup_state.last_day_of_month());
-                                                ui.memory()
-                                                    .data
-                                                    .insert_persisted(id, popup_state.clone());
+                                                ui.memory_mut(|mem| {
+                                                    mem.data
+                                                        .insert_persisted(id, popup_state.clone());
+                                                });
                                             }
                                         }
                                     });
@@ -112,9 +115,10 @@ impl<'a> DatePickerPopup<'a> {
                                                 popup_state.day = popup_state
                                                     .day
                                                     .min(popup_state.last_day_of_month());
-                                                ui.memory()
-                                                    .data
-                                                    .insert_persisted(id, popup_state.clone());
+                                                ui.memory_mut(|mem| {
+                                                    mem.data
+                                                        .insert_persisted(id, popup_state.clone());
+                                                });
                                             }
                                         }
                                     });
@@ -132,9 +136,10 @@ impl<'a> DatePickerPopup<'a> {
                                                 )
                                                 .changed()
                                             {
-                                                ui.memory()
-                                                    .data
-                                                    .insert_persisted(id, popup_state.clone());
+                                                ui.memory_mut(|mem| {
+                                                    mem.data
+                                                        .insert_persisted(id, popup_state.clone());
+                                                });
                                             }
                                         }
                                     });
@@ -150,13 +155,15 @@ impl<'a> DatePickerPopup<'a> {
                                 ui.with_layout(Layout::top_down_justified(Align::Center), |ui| {
                                     if ui
                                         .button("<<<")
-                                        .on_hover_text("substract one year")
+                                        .on_hover_text("subtract one year")
                                         .clicked()
                                     {
                                         popup_state.year -= 1;
                                         popup_state.day =
                                             popup_state.day.min(popup_state.last_day_of_month());
-                                        ui.memory().data.insert_persisted(id, popup_state.clone());
+                                        ui.memory_mut(|mem| {
+                                            mem.data.insert_persisted(id, popup_state.clone());
+                                        });
                                     }
                                 });
                             });
@@ -164,7 +171,7 @@ impl<'a> DatePickerPopup<'a> {
                                 ui.with_layout(Layout::top_down_justified(Align::Center), |ui| {
                                     if ui
                                         .button("<<")
-                                        .on_hover_text("substract one month")
+                                        .on_hover_text("subtract one month")
                                         .clicked()
                                     {
                                         popup_state.month -= 1;
@@ -174,13 +181,15 @@ impl<'a> DatePickerPopup<'a> {
                                         }
                                         popup_state.day =
                                             popup_state.day.min(popup_state.last_day_of_month());
-                                        ui.memory().data.insert_persisted(id, popup_state.clone());
+                                        ui.memory_mut(|mem| {
+                                            mem.data.insert_persisted(id, popup_state.clone());
+                                        });
                                     }
                                 });
                             });
                             strip.cell(|ui| {
                                 ui.with_layout(Layout::top_down_justified(Align::Center), |ui| {
-                                    if ui.button("<").on_hover_text("substract one day").clicked() {
+                                    if ui.button("<").on_hover_text("subtract one day").clicked() {
                                         popup_state.day -= 1;
                                         if popup_state.day == 0 {
                                             popup_state.month -= 1;
@@ -190,7 +199,9 @@ impl<'a> DatePickerPopup<'a> {
                                             }
                                             popup_state.day = popup_state.last_day_of_month();
                                         }
-                                        ui.memory().data.insert_persisted(id, popup_state.clone());
+                                        ui.memory_mut(|mem| {
+                                            mem.data.insert_persisted(id, popup_state.clone());
+                                        });
                                     }
                                 });
                             });
@@ -206,7 +217,9 @@ impl<'a> DatePickerPopup<'a> {
                                                 popup_state.year += 1;
                                             }
                                         }
-                                        ui.memory().data.insert_persisted(id, popup_state.clone());
+                                        ui.memory_mut(|mem| {
+                                            mem.data.insert_persisted(id, popup_state.clone());
+                                        });
                                     }
                                 });
                             });
@@ -220,7 +233,9 @@ impl<'a> DatePickerPopup<'a> {
                                         }
                                         popup_state.day =
                                             popup_state.day.min(popup_state.last_day_of_month());
-                                        ui.memory().data.insert_persisted(id, popup_state.clone());
+                                        ui.memory_mut(|mem| {
+                                            mem.data.insert_persisted(id, popup_state.clone());
+                                        });
                                     }
                                 });
                             });
@@ -230,7 +245,9 @@ impl<'a> DatePickerPopup<'a> {
                                         popup_state.year += 1;
                                         popup_state.day =
                                             popup_state.day.min(popup_state.last_day_of_month());
-                                        ui.memory().data.insert_persisted(id, popup_state.clone());
+                                        ui.memory_mut(|mem| {
+                                            mem.data.insert_persisted(id, popup_state.clone());
+                                        });
                                     }
                                 });
                             });
@@ -242,9 +259,8 @@ impl<'a> DatePickerPopup<'a> {
                     strip.cell(|ui| {
                         ui.spacing_mut().item_spacing = Vec2::new(1.0, 2.0);
                         TableBuilder::new(ui)
-                            .scroll(false)
-                            .clip(false)
-                            .columns(Size::remainder(), if self.calendar_week { 8 } else { 7 })
+                            .vscroll(false)
+                            .columns(Column::remainder(), if self.calendar_week { 8 } else { 7 })
                             .header(height, |mut header| {
                                 if self.calendar_week {
                                     header.col(|ui| {
@@ -339,10 +355,12 @@ impl<'a> DatePickerPopup<'a> {
                                                             popup_state.year = day.year();
                                                             popup_state.month = day.month();
                                                             popup_state.day = day.day();
-                                                            ui.memory().data.insert_persisted(
-                                                                id,
-                                                                popup_state.clone(),
-                                                            );
+                                                            ui.memory_mut(|mem| {
+                                                                mem.data.insert_persisted(
+                                                                    id,
+                                                                    popup_state.clone(),
+                                                                );
+                                                            });
                                                         }
                                                     },
                                                 );
@@ -367,14 +385,13 @@ impl<'a> DatePickerPopup<'a> {
                         strip.cell(|ui| {
                             ui.with_layout(Layout::top_down_justified(Align::Center), |ui| {
                                 if ui.button("Save").clicked() {
-                                    *self.selection = Date::from_utc(
-                                        NaiveDate::from_ymd(
-                                            popup_state.year,
-                                            popup_state.month,
-                                            popup_state.day,
-                                        ),
-                                        Utc,
-                                    );
+                                    *self.selection = NaiveDate::from_ymd_opt(
+                                        popup_state.year,
+                                        popup_state.month,
+                                        popup_state.day,
+                                    )
+                                    .expect("Could not create NaiveDate");
+                                    saved = true;
                                     close = true;
                                 }
                             });
@@ -385,13 +402,15 @@ impl<'a> DatePickerPopup<'a> {
 
         if close {
             popup_state.setup = false;
-            ui.memory().data.insert_persisted(id, popup_state);
-
-            ui.memory()
-                .data
-                .get_persisted_mut_or_default::<DatePickerButtonState>(self.button_id)
-                .picker_visible = false;
+            ui.memory_mut(|mem| {
+                mem.data.insert_persisted(id, popup_state);
+                mem.data
+                    .get_persisted_mut_or_default::<DatePickerButtonState>(self.button_id)
+                    .picker_visible = false;
+            });
         }
+
+        saved && close
     }
 }
 

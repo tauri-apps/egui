@@ -1,6 +1,6 @@
 use emath::{remap_clamp, Rect};
 
-use crate::{textures::TextureFilter, FontImage, ImageDelta};
+use crate::{FontImage, ImageDelta};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Rectu {
@@ -174,16 +174,18 @@ impl TextureAtlas {
 
     /// Call to get the change to the image since last call.
     pub fn take_delta(&mut self) -> Option<ImageDelta> {
+        let texture_options = crate::textures::TextureOptions::LINEAR;
+
         let dirty = std::mem::replace(&mut self.dirty, Rectu::NOTHING);
         if dirty == Rectu::NOTHING {
             None
         } else if dirty == Rectu::EVERYTHING {
-            Some(ImageDelta::full(self.image.clone(), TextureFilter::Linear))
+            Some(ImageDelta::full(self.image.clone(), texture_options))
         } else {
             let pos = [dirty.min_x, dirty.min_y];
             let size = [dirty.max_x - dirty.min_x, dirty.max_y - dirty.min_y];
             let region = self.image.region(pos, size);
-            Some(ImageDelta::partial(pos, region, TextureFilter::Linear))
+            Some(ImageDelta::partial(pos, region, texture_options))
         }
     }
 
@@ -215,8 +217,8 @@ impl TextureAtlas {
         if required_height > self.max_height() {
             // This is a bad place to be - we need to start reusing space :/
 
-            #[cfg(feature = "tracing")]
-            tracing::wan!("epaint texture atlas overflowed!");
+            #[cfg(feature = "log")]
+            log::warn!("epaint texture atlas overflowed!");
 
             self.cursor = (0, self.image.height() / 3); // Restart a bit down - the top of the atlas has too many important things in it
             self.overflowed = true; // this will signal the user that we need to recreate the texture atlas next frame.

@@ -1,10 +1,7 @@
-> eframe_tao is a fork of eframe to make egui work with tao
-
 # eframe: the [`egui`](https://github.com/emilk/egui) framework
 
 [![Latest version](https://img.shields.io/crates/v/eframe.svg)](https://crates.io/crates/eframe)
 [![Documentation](https://docs.rs/eframe/badge.svg)](https://docs.rs/eframe)
-[![unsafe forbidden](https://img.shields.io/badge/unsafe-forbidden-success.svg)](https://github.com/rust-secure-code/safety-dance/)
 ![MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Apache](https://img.shields.io/badge/license-Apache-blue.svg)
 
@@ -24,7 +21,7 @@ For how to use `egui`, see [the egui docs](https://docs.rs/egui).
 To use on Linux, first run:
 
 ```
-sudo apt-get install libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libspeechd-dev libxkbcommon-dev libssl-dev
+sudo apt-get install libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libssl-dev
 ```
 
 You need to either use `edition = "2021"`, or set `resolver = "2"` in the `[workspace]` section of your to-level `Cargo.toml`. See [this link](https://doc.rust-lang.org/edition-guide/rust-2021/default-cargo-resolver.html) for more info.
@@ -47,7 +44,6 @@ You can also use `egui_glow` and [`winit`](https://github.com/rust-windowing/win
 * Mobile text editing is not as good as for a normal web app.
 * Accessibility: There is an experimental screen reader for `eframe`, but it has to be enabled explicitly. There is no JS function to ask "Does the user want a screen reader?" (and there should probably not be such a function, due to user tracking/integrity concerns).
 * No integration with browser settings for colors and fonts.
-* On Linux and Mac, Firefox will copy the WebGL render target from GPU, to CPU and then back again (https://bugzilla.mozilla.org/show_bug.cgi?id=1010527#c0), slowing down egui.
 
 In many ways, `eframe` is trying to make the browser do something it wasn't designed to do (though there are many things browser vendors could do to improve how well libraries like egui work).
 

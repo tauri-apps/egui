@@ -1,6 +1,6 @@
 #![allow(clippy::needless_pass_by_value)] // False positives with `impl ToString`
 
-use std::ops::RangeInclusive;
+use std::{cmp::Ordering, ops::RangeInclusive};
 
 use crate::*;
 
@@ -28,6 +28,7 @@ impl MonoState {
 // ----------------------------------------------------------------------------
 
 type NumFormatter<'a> = Box<dyn 'a + Fn(f64, RangeInclusive<usize>) -> String>;
+type NumParser<'a> = Box<dyn 'a + Fn(&str) -> Option<f64>>;
 
 // ----------------------------------------------------------------------------
 
@@ -61,6 +62,7 @@ pub struct DragValue<'a> {
     min_decimals: usize,
     max_decimals: Option<usize>,
     custom_formatter: Option<NumFormatter<'a>>,
+    custom_parser: Option<NumParser<'a>>,
 }
 
 impl<'a> DragValue<'a> {
@@ -91,6 +93,7 @@ impl<'a> DragValue<'a> {
             min_decimals: 0,
             max_decimals: None,
             custom_formatter: None,
+            custom_parser: None,
         }
     }
 
@@ -157,10 +160,35 @@ impl<'a> DragValue<'a> {
     /// A custom formatter takes a `f64` for the numeric value and a `RangeInclusive<usize>` representing
     /// the decimal range i.e. minimum and maximum number of decimal places shown.
     ///
+    /// See also: [`DragValue::custom_parser`]
+    ///
     /// ```
     /// # egui::__run_test_ui(|ui| {
-    /// # let mut my_i64: i64 = 0;
-    /// ui.add(egui::DragValue::new(&mut my_i64).custom_formatter(|n, _| format!("{:X}", n as i64)));
+    /// # let mut my_i32: i32 = 0;
+    /// ui.add(egui::DragValue::new(&mut my_i32)
+    ///     .clamp_range(0..=((60 * 60 * 24) - 1))
+    ///     .custom_formatter(|n, _| {
+    ///         let n = n as i32;
+    ///         let hours = n / (60 * 60);
+    ///         let mins = (n / 60) % 60;
+    ///         let secs = n % 60;
+    ///         format!("{hours:02}:{mins:02}:{secs:02}")
+    ///     })
+    ///     .custom_parser(|s| {
+    ///         let parts: Vec<&str> = s.split(':').collect();
+    ///         if parts.len() == 3 {
+    ///             parts[0].parse::<i32>().and_then(|h| {
+    ///                 parts[1].parse::<i32>().and_then(|m| {
+    ///                     parts[2].parse::<i32>().map(|s| {
+    ///                         ((h * 60 * 60) + (m * 60) + s) as f64
+    ///                     })
+    ///                 })
+    ///             })
+    ///             .ok()
+    ///         } else {
+    ///             None
+    ///         }
+    ///     }));
     /// # });
     /// ```
     pub fn custom_formatter(
@@ -169,6 +197,160 @@ impl<'a> DragValue<'a> {
     ) -> Self {
         self.custom_formatter = Some(Box::new(formatter));
         self
+    }
+
+    /// Set custom parser defining how the text input is parsed into a number.
+    ///
+    /// A custom parser takes an `&str` to parse into a number and returns a `f64` if it was successfully parsed
+    /// or `None` otherwise.
+    ///
+    /// See also: [`DragValue::custom_formatter`]
+    ///
+    /// ```
+    /// # egui::__run_test_ui(|ui| {
+    /// # let mut my_i32: i32 = 0;
+    /// ui.add(egui::DragValue::new(&mut my_i32)
+    ///     .clamp_range(0..=((60 * 60 * 24) - 1))
+    ///     .custom_formatter(|n, _| {
+    ///         let n = n as i32;
+    ///         let hours = n / (60 * 60);
+    ///         let mins = (n / 60) % 60;
+    ///         let secs = n % 60;
+    ///         format!("{hours:02}:{mins:02}:{secs:02}")
+    ///     })
+    ///     .custom_parser(|s| {
+    ///         let parts: Vec<&str> = s.split(':').collect();
+    ///         if parts.len() == 3 {
+    ///             parts[0].parse::<i32>().and_then(|h| {
+    ///                 parts[1].parse::<i32>().and_then(|m| {
+    ///                     parts[2].parse::<i32>().map(|s| {
+    ///                         ((h * 60 * 60) + (m * 60) + s) as f64
+    ///                     })
+    ///                 })
+    ///             })
+    ///             .ok()
+    ///         } else {
+    ///             None
+    ///         }
+    ///     }));
+    /// # });
+    /// ```
+    pub fn custom_parser(mut self, parser: impl 'a + Fn(&str) -> Option<f64>) -> Self {
+        self.custom_parser = Some(Box::new(parser));
+        self
+    }
+
+    /// Set `custom_formatter` and `custom_parser` to display and parse numbers as binary integers. Floating point
+    /// numbers are *not* supported.
+    ///
+    /// `min_width` specifies the minimum number of displayed digits; if the number is shorter than this, it will be
+    /// prefixed with additional 0s to match `min_width`.
+    ///
+    /// If `twos_complement` is true, negative values will be displayed as the 2's complement representation. Otherwise
+    /// they will be prefixed with a '-' sign.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `min_width` is 0.
+    ///
+    /// ```
+    /// # egui::__run_test_ui(|ui| {
+    /// # let mut my_i32: i32 = 0;
+    /// ui.add(egui::DragValue::new(&mut my_i32).binary(64, false));
+    /// # });
+    /// ```
+    pub fn binary(self, min_width: usize, twos_complement: bool) -> Self {
+        assert!(
+            min_width > 0,
+            "DragValue::binary: `min_width` must be greater than 0"
+        );
+        if twos_complement {
+            self.custom_formatter(move |n, _| format!("{:0>min_width$b}", n as i64))
+        } else {
+            self.custom_formatter(move |n, _| {
+                let sign = if n < 0.0 { "-" } else { "" };
+                format!("{sign}{:0>min_width$b}", n.abs() as i64)
+            })
+        }
+        .custom_parser(|s| i64::from_str_radix(s, 2).map(|n| n as f64).ok())
+    }
+
+    /// Set `custom_formatter` and `custom_parser` to display and parse numbers as octal integers. Floating point
+    /// numbers are *not* supported.
+    ///
+    /// `min_width` specifies the minimum number of displayed digits; if the number is shorter than this, it will be
+    /// prefixed with additional 0s to match `min_width`.
+    ///
+    /// If `twos_complement` is true, negative values will be displayed as the 2's complement representation. Otherwise
+    /// they will be prefixed with a '-' sign.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `min_width` is 0.
+    ///
+    /// ```
+    /// # egui::__run_test_ui(|ui| {
+    /// # let mut my_i32: i32 = 0;
+    /// ui.add(egui::DragValue::new(&mut my_i32).octal(22, false));
+    /// # });
+    /// ```
+    pub fn octal(self, min_width: usize, twos_complement: bool) -> Self {
+        assert!(
+            min_width > 0,
+            "DragValue::octal: `min_width` must be greater than 0"
+        );
+        if twos_complement {
+            self.custom_formatter(move |n, _| format!("{:0>min_width$o}", n as i64))
+        } else {
+            self.custom_formatter(move |n, _| {
+                let sign = if n < 0.0 { "-" } else { "" };
+                format!("{sign}{:0>min_width$o}", n.abs() as i64)
+            })
+        }
+        .custom_parser(|s| i64::from_str_radix(s, 8).map(|n| n as f64).ok())
+    }
+
+    /// Set `custom_formatter` and `custom_parser` to display and parse numbers as hexadecimal integers. Floating point
+    /// numbers are *not* supported.
+    ///
+    /// `min_width` specifies the minimum number of displayed digits; if the number is shorter than this, it will be
+    /// prefixed with additional 0s to match `min_width`.
+    ///
+    /// If `twos_complement` is true, negative values will be displayed as the 2's complement representation. Otherwise
+    /// they will be prefixed with a '-' sign.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `min_width` is 0.
+    ///
+    /// ```
+    /// # egui::__run_test_ui(|ui| {
+    /// # let mut my_i32: i32 = 0;
+    /// ui.add(egui::DragValue::new(&mut my_i32).hexadecimal(16, false, true));
+    /// # });
+    /// ```
+    pub fn hexadecimal(self, min_width: usize, twos_complement: bool, upper: bool) -> Self {
+        assert!(
+            min_width > 0,
+            "DragValue::hexadecimal: `min_width` must be greater than 0"
+        );
+        match (twos_complement, upper) {
+            (true, true) => {
+                self.custom_formatter(move |n, _| format!("{:0>min_width$X}", n as i64))
+            }
+            (true, false) => {
+                self.custom_formatter(move |n, _| format!("{:0>min_width$x}", n as i64))
+            }
+            (false, true) => self.custom_formatter(move |n, _| {
+                let sign = if n < 0.0 { "-" } else { "" };
+                format!("{sign}{:0>min_width$X}", n.abs() as i64)
+            }),
+            (false, false) => self.custom_formatter(move |n, _| {
+                let sign = if n < 0.0 { "-" } else { "" };
+                format!("{sign}{:0>min_width$x}", n.abs() as i64)
+            }),
+        }
+        .custom_parser(|s| i64::from_str_radix(s, 16).map(|n| n as f64).ok())
     }
 }
 
@@ -183,23 +365,86 @@ impl<'a> Widget for DragValue<'a> {
             min_decimals,
             max_decimals,
             custom_formatter,
+            custom_parser,
         } = self;
 
-        let shift = ui.input().modifiers.shift_only();
-        let is_slow_speed = shift && ui.memory().is_being_dragged(ui.next_auto_id());
+        let shift = ui.input(|i| i.modifiers.shift_only());
+        // The widget has the same ID whether it's in edit or button mode.
+        let id = ui.next_auto_id();
+        let is_slow_speed = shift && ui.memory(|mem| mem.is_being_dragged(id));
+
+        // The following ensures that when a `DragValue` receives focus,
+        // it is immediately rendered in edit mode, rather than being rendered
+        // in button mode for just one frame. This is important for
+        // screen readers.
+        let is_kb_editing = ui.memory_mut(|mem| {
+            mem.interested_in_focus(id);
+            let is_kb_editing = mem.has_focus(id);
+            if mem.gained_focus(id) {
+                mem.drag_value.edit_string = None;
+            }
+            is_kb_editing
+        });
 
         let old_value = get(&mut get_set_value);
-        let value = clamp_to_range(old_value, clamp_range.clone());
-        if old_value != value {
-            set(&mut get_set_value, value);
-        }
-        let aim_rad = ui.input().aim_radius() as f64;
+        let mut value = old_value;
+        let aim_rad = ui.input(|i| i.aim_radius() as f64);
 
         let auto_decimals = (aim_rad / speed.abs()).log10().ceil().clamp(0.0, 15.0) as usize;
         let auto_decimals = auto_decimals + is_slow_speed as usize;
-
         let max_decimals = max_decimals.unwrap_or(auto_decimals + 2);
         let auto_decimals = auto_decimals.clamp(min_decimals, max_decimals);
+
+        let change = ui.input_mut(|input| {
+            let mut change = 0.0;
+
+            if is_kb_editing {
+                // This deliberately doesn't listen for left and right arrow keys,
+                // because when editing, these are used to move the caret.
+                // This behavior is consistent with other editable spinner/stepper
+                // implementations, such as Chromium's (for HTML5 number input).
+                // It is also normal for such controls to go directly into edit mode
+                // when they receive keyboard focus, and some screen readers
+                // assume this behavior, so having a separate mode for incrementing
+                // and decrementing, that supports all arrow keys, would be
+                // problematic.
+                change += input.count_and_consume_key(Modifiers::NONE, Key::ArrowUp) as f64
+                    - input.count_and_consume_key(Modifiers::NONE, Key::ArrowDown) as f64;
+            }
+
+            #[cfg(feature = "accesskit")]
+            {
+                use accesskit::Action;
+                change += input.num_accesskit_action_requests(id, Action::Increment) as f64
+                    - input.num_accesskit_action_requests(id, Action::Decrement) as f64;
+            }
+
+            change
+        });
+
+        #[cfg(feature = "accesskit")]
+        {
+            use accesskit::{Action, ActionData};
+            ui.input(|input| {
+                for request in input.accesskit_action_requests(id, Action::SetValue) {
+                    if let Some(ActionData::NumericValue(new_value)) = request.data {
+                        value = new_value;
+                    }
+                }
+            });
+        }
+
+        if change != 0.0 {
+            value += speed * change;
+            value = emath::round_to_decimals(value, auto_decimals);
+        }
+
+        value = clamp_to_range(value, clamp_range.clone());
+        if old_value != value {
+            set(&mut get_set_value, value);
+            ui.memory_mut(|mem| mem.drag_value.edit_string = None);
+        }
+
         let value_text = match custom_formatter {
             Some(custom_formatter) => custom_formatter(value, auto_decimals..=max_decimals),
             None => {
@@ -211,37 +456,43 @@ impl<'a> Widget for DragValue<'a> {
             }
         };
 
-        let kb_edit_id = ui.next_auto_id();
-        let is_kb_editing = ui.memory().has_focus(kb_edit_id);
+        let text_style = ui.style().drag_value_text_style.clone();
 
+        // some clones below are redundant if AccessKit is disabled
+        #[allow(clippy::redundant_clone)]
         let mut response = if is_kb_editing {
-            let button_width = ui.spacing().interact_size.x;
             let mut value_text = ui
-                .memory()
-                .drag_value
-                .edit_string
-                .take()
-                .unwrap_or(value_text);
+                .memory_mut(|mem| mem.drag_value.edit_string.take())
+                .unwrap_or_else(|| value_text.clone());
             let response = ui.add(
                 TextEdit::singleline(&mut value_text)
-                    .id(kb_edit_id)
-                    .desired_width(button_width)
-                    .font(TextStyle::Monospace),
+                    .clip_text(false)
+                    .horizontal_align(ui.layout().horizontal_align())
+                    .vertical_align(ui.layout().vertical_align())
+                    .margin(ui.spacing().button_padding)
+                    .min_size(ui.spacing().interact_size)
+                    .id(id)
+                    .desired_width(ui.spacing().interact_size.x)
+                    .font(text_style),
             );
-            if let Ok(parsed_value) = value_text.parse() {
-                let parsed_value = clamp_to_range(parsed_value, clamp_range);
-                set(&mut get_set_value, parsed_value);
+            // Only update the value when the user presses enter, or clicks elsewhere. NOT every frame.
+            // See https://github.com/emilk/egui/issues/2687
+            if response.lost_focus() {
+                let parsed_value = match custom_parser {
+                    Some(parser) => parser(&value_text),
+                    None => value_text.parse().ok(),
+                };
+                if let Some(parsed_value) = parsed_value {
+                    let parsed_value = clamp_to_range(parsed_value, clamp_range.clone());
+                    set(&mut get_set_value, parsed_value);
+                }
             }
-            if ui.input().key_pressed(Key::Enter) {
-                ui.memory().surrender_focus(kb_edit_id);
-                ui.memory().drag_value.edit_string = None;
-            } else {
-                ui.memory().drag_value.edit_string = Some(value_text);
-            }
+            ui.memory_mut(|mem| mem.drag_value.edit_string = Some(value_text));
             response
         } else {
             let button = Button::new(
-                RichText::new(format!("{}{}{}", prefix, value_text, suffix)).monospace(),
+                RichText::new(format!("{}{}{}", prefix, value_text.clone(), suffix))
+                    .text_style(text_style),
             )
             .wrap(false)
             .sense(Sense::click_and_drag())
@@ -260,10 +511,18 @@ impl<'a> Widget for DragValue<'a> {
             }
 
             if response.clicked() {
-                ui.memory().request_focus(kb_edit_id);
-                ui.memory().drag_value.edit_string = None; // Filled in next frame
+                ui.memory_mut(|mem| {
+                    mem.drag_value.edit_string = None;
+                    mem.request_focus(id);
+                });
+                let mut state = TextEdit::load_state(ui.ctx(), id).unwrap_or_default();
+                state.set_ccursor_range(Some(text::CCursorRange::two(
+                    epaint::text::cursor::CCursor::default(),
+                    epaint::text::cursor::CCursor::new(value_text.chars().count()),
+                )));
+                state.store(ui.ctx(), response.id);
             } else if response.dragged() {
-                ui.output().cursor_icon = CursorIcon::ResizeHorizontal;
+                ui.ctx().set_cursor_icon(CursorIcon::ResizeHorizontal);
 
                 let mdelta = response.drag_delta();
                 let delta_points = mdelta.x - mdelta.y; // Increase to the right and up
@@ -273,11 +532,11 @@ impl<'a> Widget for DragValue<'a> {
                 let delta_value = delta_points as f64 * speed;
 
                 if delta_value != 0.0 {
-                    let mut drag_state = std::mem::take(&mut ui.memory().drag_value);
+                    let mut drag_state = ui.memory_mut(|mem| std::mem::take(&mut mem.drag_value));
 
                     // Since we round the value being dragged, we need to store the full precision value in memory:
                     let stored_value = (drag_state.last_dragged_id == Some(response.id))
-                        .then(|| drag_state.last_dragged_value)
+                        .then_some(drag_state.last_dragged_value)
                         .flatten();
                     let stored_value = stored_value.unwrap_or(value);
                     let stored_value = stored_value + delta_value;
@@ -289,24 +548,12 @@ impl<'a> Widget for DragValue<'a> {
                     );
                     let rounded_new_value =
                         emath::round_to_decimals(rounded_new_value, auto_decimals);
-                    let rounded_new_value = clamp_to_range(rounded_new_value, clamp_range);
+                    let rounded_new_value = clamp_to_range(rounded_new_value, clamp_range.clone());
                     set(&mut get_set_value, rounded_new_value);
 
                     drag_state.last_dragged_id = Some(response.id);
                     drag_state.last_dragged_value = Some(stored_value);
-                    ui.memory().drag_value = drag_state;
-                }
-            } else if response.has_focus() {
-                let change = ui.input().num_presses(Key::ArrowUp) as f64
-                    + ui.input().num_presses(Key::ArrowRight) as f64
-                    - ui.input().num_presses(Key::ArrowDown) as f64
-                    - ui.input().num_presses(Key::ArrowLeft) as f64;
-
-                if change != 0.0 {
-                    let new_value = value + speed * change;
-                    let new_value = emath::round_to_decimals(new_value, auto_decimals);
-                    let new_value = clamp_to_range(new_value, clamp_range);
-                    set(&mut get_set_value, new_value);
+                    ui.memory_mut(|mem| mem.drag_value = drag_state);
                 }
             }
 
@@ -316,13 +563,100 @@ impl<'a> Widget for DragValue<'a> {
         response.changed = get(&mut get_set_value) != old_value;
 
         response.widget_info(|| WidgetInfo::drag_value(value));
+
+        #[cfg(feature = "accesskit")]
+        ui.ctx().accesskit_node_builder(response.id, |builder| {
+            use accesskit::Action;
+            // If either end of the range is unbounded, it's better
+            // to leave the corresponding AccessKit field set to None,
+            // to allow for platform-specific default behavior.
+            if clamp_range.start().is_finite() {
+                builder.set_min_numeric_value(*clamp_range.start());
+            }
+            if clamp_range.end().is_finite() {
+                builder.set_max_numeric_value(*clamp_range.end());
+            }
+            builder.set_numeric_value_step(speed);
+            builder.add_action(Action::SetValue);
+            if value < *clamp_range.end() {
+                builder.add_action(Action::Increment);
+            }
+            if value > *clamp_range.start() {
+                builder.add_action(Action::Decrement);
+            }
+            // The name field is set to the current value by the button,
+            // but we don't want it set that way on this widget type.
+            builder.clear_name();
+            // Always expose the value as a string. This makes the widget
+            // more stable to accessibility users as it switches
+            // between edit and button modes. This is particularly important
+            // for VoiceOver on macOS; if the value is not exposed as a string
+            // when the widget is in button mode, then VoiceOver speaks
+            // the value (or a percentage if the widget has a clamp range)
+            // when the widget loses focus, overriding the announcement
+            // of the newly focused widget. This is certainly a VoiceOver bug,
+            // but it's good to make our software work as well as possible
+            // with existing assistive technology. However, if the widget
+            // has a prefix and/or suffix, expose those when in button mode,
+            // just as they're exposed on the screen. This triggers the
+            // VoiceOver bug just described, but exposing all information
+            // is more important, and at least we can avoid the bug
+            // for instances of the widget with no prefix or suffix.
+            //
+            // The value is exposed as a string by the text edit widget
+            // when in edit mode.
+            if !is_kb_editing {
+                let value_text = format!("{}{}{}", prefix, value_text, suffix);
+                builder.set_value(value_text);
+            }
+        });
+
         response
     }
 }
 
 fn clamp_to_range(x: f64, range: RangeInclusive<f64>) -> f64 {
-    x.clamp(
-        range.start().min(*range.end()),
-        range.start().max(*range.end()),
-    )
+    let (mut min, mut max) = (*range.start(), *range.end());
+
+    if min.total_cmp(&max) == Ordering::Greater {
+        (min, max) = (max, min);
+    }
+
+    match x.total_cmp(&min) {
+        Ordering::Less | Ordering::Equal => min,
+        Ordering::Greater => match x.total_cmp(&max) {
+            Ordering::Greater | Ordering::Equal => max,
+            Ordering::Less => x,
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::clamp_to_range;
+
+    macro_rules! total_assert_eq {
+        ($a:expr, $b:expr) => {
+            assert!(
+                matches!($a.total_cmp(&$b), std::cmp::Ordering::Equal),
+                "{} != {}",
+                $a,
+                $b
+            );
+        };
+    }
+
+    #[test]
+    fn test_total_cmp_clamp_to_range() {
+        total_assert_eq!(0.0_f64, clamp_to_range(-0.0, 0.0..=f64::MAX));
+        total_assert_eq!(-0.0_f64, clamp_to_range(0.0, -1.0..=-0.0));
+        total_assert_eq!(-1.0_f64, clamp_to_range(-25.0, -1.0..=1.0));
+        total_assert_eq!(5.0_f64, clamp_to_range(5.0, -1.0..=10.0));
+        total_assert_eq!(15.0_f64, clamp_to_range(25.0, -1.0..=15.0));
+        total_assert_eq!(1.0_f64, clamp_to_range(1.0, 1.0..=10.0));
+        total_assert_eq!(10.0_f64, clamp_to_range(10.0, 1.0..=10.0));
+        total_assert_eq!(5.0_f64, clamp_to_range(5.0, 10.0..=1.0));
+        total_assert_eq!(5.0_f64, clamp_to_range(15.0, 5.0..=1.0));
+        total_assert_eq!(1.0_f64, clamp_to_range(-5.0, 5.0..=1.0));
+    }
 }

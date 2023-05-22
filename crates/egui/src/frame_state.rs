@@ -1,12 +1,19 @@
 use std::ops::RangeInclusive;
 
-use crate::*;
+use crate::{id::IdSet, *};
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct TooltipRect {
-    pub id: Id,
+pub(crate) struct TooltipFrameState {
+    pub common_id: Id,
     pub rect: Rect,
     pub count: usize,
+}
+
+#[cfg(feature = "accesskit")]
+#[derive(Clone)]
+pub(crate) struct AccessKitFrameState {
+    pub(crate) node_builders: IdMap<accesskit::NodeBuilder>,
+    pub(crate) parent_stack: Vec<Id>,
 }
 
 /// State that is collected during a frame and then cleared.
@@ -14,7 +21,6 @@ pub(crate) struct TooltipRect {
 #[derive(Clone)]
 pub(crate) struct FrameState {
     /// All [`Id`]s that were used this frame.
-    /// Used to debug [`Id`] clashes of widgets.
     pub(crate) used_ids: IdMap<Rect>,
 
     /// Starts off as the screen_rect, shrinks as panels are added.
@@ -32,7 +38,7 @@ pub(crate) struct FrameState {
     /// If a tooltip has been shown this frame, where was it?
     /// This is used to prevent multiple tooltips to cover each other.
     /// Initialized to `None` at the start of each frame.
-    pub(crate) tooltip_rect: Option<TooltipRect>,
+    pub(crate) tooltip_state: Option<TooltipFrameState>,
 
     /// Set to [`InputState::scroll_delta`] on the start of each frame.
     ///
@@ -41,6 +47,15 @@ pub(crate) struct FrameState {
 
     /// horizontal, vertical
     pub(crate) scroll_target: [Option<(RangeInclusive<f32>, Option<Align>)>; 2],
+
+    #[cfg(feature = "accesskit")]
+    pub(crate) accesskit_state: Option<AccessKitFrameState>,
+
+    /// Highlight these widgets this next frame. Read from this.
+    pub(crate) highlight_this_frame: IdSet,
+
+    /// Highlight these widgets the next frame. Write to this.
+    pub(crate) highlight_next_frame: IdSet,
 }
 
 impl Default for FrameState {
@@ -50,9 +65,13 @@ impl Default for FrameState {
             available_rect: Rect::NAN,
             unused_rect: Rect::NAN,
             used_by_panels: Rect::NAN,
-            tooltip_rect: None,
+            tooltip_state: None,
             scroll_delta: Vec2::ZERO,
             scroll_target: [None, None],
+            #[cfg(feature = "accesskit")]
+            accesskit_state: None,
+            highlight_this_frame: Default::default(),
+            highlight_next_frame: Default::default(),
         }
     }
 }
@@ -64,18 +83,29 @@ impl FrameState {
             available_rect,
             unused_rect,
             used_by_panels,
-            tooltip_rect,
+            tooltip_state,
             scroll_delta,
             scroll_target,
+            #[cfg(feature = "accesskit")]
+            accesskit_state,
+            highlight_this_frame,
+            highlight_next_frame,
         } = self;
 
         used_ids.clear();
         *available_rect = input.screen_rect();
         *unused_rect = input.screen_rect();
         *used_by_panels = Rect::NOTHING;
-        *tooltip_rect = None;
+        *tooltip_state = None;
         *scroll_delta = input.scroll_delta;
         *scroll_target = [None, None];
+
+        #[cfg(feature = "accesskit")]
+        {
+            *accesskit_state = None;
+        }
+
+        *highlight_this_frame = std::mem::take(highlight_next_frame);
     }
 
     /// How much space is still available after panels has been added.

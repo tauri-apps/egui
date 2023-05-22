@@ -8,7 +8,7 @@ pub fn code_view_ui(ui: &mut egui::Ui, mut code: &str) {
     let mut layouter = |ui: &egui::Ui, string: &str, _wrap_width: f32| {
         let layout_job = highlight(ui.ctx(), &theme, string, language);
         // layout_job.wrap.max_width = wrap_width; // no wrapping
-        ui.fonts().layout_job(layout_job)
+        ui.fonts(|f| f.layout_job(layout_job))
     };
 
     ui.add(
@@ -31,9 +31,11 @@ pub fn highlight(ctx: &egui::Context, theme: &CodeTheme, code: &str, language: &
 
     type HighlightCache = egui::util::cache::FrameCache<LayoutJob, Highlighter>;
 
-    let mut memory = ctx.memory();
-    let highlight_cache = memory.caches.cache::<HighlightCache>();
-    highlight_cache.get((theme, code, language))
+    ctx.memory_mut(|mem| {
+        mem.caches
+            .cache::<HighlightCache>()
+            .get((theme, code, language))
+    })
 }
 
 // ----------------------------------------------------------------------------
@@ -146,21 +148,23 @@ impl CodeTheme {
 
     pub fn from_memory(ctx: &egui::Context) -> Self {
         if ctx.style().visuals.dark_mode {
-            ctx.data()
-                .get_persisted(egui::Id::new("dark"))
-                .unwrap_or_else(CodeTheme::dark)
+            ctx.data_mut(|d| {
+                d.get_persisted(egui::Id::new("dark"))
+                    .unwrap_or_else(CodeTheme::dark)
+            })
         } else {
-            ctx.data()
-                .get_persisted(egui::Id::new("light"))
-                .unwrap_or_else(CodeTheme::light)
+            ctx.data_mut(|d| {
+                d.get_persisted(egui::Id::new("light"))
+                    .unwrap_or_else(CodeTheme::light)
+            })
         }
     }
 
     pub fn store_in_memory(self, ctx: &egui::Context) {
         if self.dark_mode {
-            ctx.data().insert_persisted(egui::Id::new("dark"), self);
+            ctx.data_mut(|d| d.insert_persisted(egui::Id::new("dark"), self));
         } else {
-            ctx.data().insert_persisted(egui::Id::new("light"), self);
+            ctx.data_mut(|d| d.insert_persisted(egui::Id::new("light"), self));
         }
     }
 }
@@ -195,7 +199,7 @@ impl CodeTheme {
 #[cfg(not(feature = "syntect"))]
 impl CodeTheme {
     pub fn dark() -> Self {
-        let font_id = egui::FontId::monospace(12.0);
+        let font_id = egui::FontId::monospace(10.0);
         use egui::{Color32, TextFormat};
         Self {
             dark_mode: true,
@@ -211,7 +215,7 @@ impl CodeTheme {
     }
 
     pub fn light() -> Self {
-        let font_id = egui::FontId::monospace(12.0);
+        let font_id = egui::FontId::monospace(10.0);
         use egui::{Color32, TextFormat};
         Self {
             dark_mode: false,
@@ -230,9 +234,8 @@ impl CodeTheme {
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_top(|ui| {
             let selected_id = egui::Id::null();
-            let mut selected_tt: TokenType = *ui
-                .data()
-                .get_persisted_mut_or(selected_id, TokenType::Comment);
+            let mut selected_tt: TokenType =
+                ui.data_mut(|d| *d.get_persisted_mut_or(selected_id, TokenType::Comment));
 
             ui.vertical(|ui| {
                 ui.set_width(150.0);
@@ -274,7 +277,7 @@ impl CodeTheme {
 
             ui.add_space(16.0);
 
-            ui.data().insert_persisted(selected_id, selected_tt);
+            ui.data_mut(|d| d.insert_persisted(selected_id, selected_tt));
 
             egui::Frame::group(ui.style())
                 .inner_margin(egui::Vec2::splat(2.0))
@@ -318,7 +321,7 @@ impl Highlighter {
             // Fallback:
             LayoutJob::simple(
                 code.into(),
-                egui::FontId::monospace(14.0),
+                egui::FontId::monospace(12.0),
                 if theme.dark_mode {
                     egui::Color32::LIGHT_GRAY
                 } else {
@@ -358,13 +361,13 @@ impl Highlighter {
                 let underline = if underline {
                     egui::Stroke::new(1.0, text_color)
                 } else {
-                    egui::Stroke::none()
+                    egui::Stroke::NONE
                 };
                 job.sections.push(LayoutSection {
                     leading_space: 0.0,
                     byte_range: as_byte_range(text, range),
                     format: TextFormat {
-                        font_id: egui::FontId::monospace(14.0),
+                        font_id: egui::FontId::monospace(12.0),
                         color: text_color,
                         italics,
                         underline,

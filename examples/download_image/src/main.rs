@@ -4,13 +4,14 @@ use eframe::egui;
 use egui_extras::RetainedImage;
 use poll_promise::Promise;
 
-fn main() {
+fn main() -> Result<(), eframe::Error> {
+    env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
     let options = eframe::NativeOptions::default();
     eframe::run_native(
         "Download and show an image with eframe/egui",
         options,
-        Box::new(|_cc| Box::new(MyApp::default())),
-    );
+        Box::new(|_cc| Box::<MyApp>::default()),
+    )
 }
 
 #[derive(Default)]

@@ -7,7 +7,6 @@ use crate::{
     Color32, Context, FontId,
 };
 use epaint::{
-    mutex::{RwLockReadGuard, RwLockWriteGuard},
     text::{Fonts, Galley},
     CircleShape, RectShape, Rounding, Shape, Stroke,
 };
@@ -105,10 +104,12 @@ impl Painter {
         &self.ctx
     }
 
-    /// Available fonts.
+    /// Read-only access to the shared [`Fonts`].
+    ///
+    /// See [`Context`] documentation for how locks work.
     #[inline(always)]
-    pub fn fonts(&self) -> RwLockReadGuard<'_, Fonts> {
-        self.ctx.fonts()
+    pub fn fonts<R>(&self, reader: impl FnOnce(&Fonts) -> R) -> R {
+        self.ctx.fonts(reader)
     }
 
     /// Where we paint
@@ -152,8 +153,9 @@ impl Painter {
 
 /// ## Low level
 impl Painter {
-    fn paint_list(&self) -> RwLockWriteGuard<'_, PaintList> {
-        RwLockWriteGuard::map(self.ctx.graphics(), |g| g.list(self.layer_id))
+    #[inline]
+    fn paint_list<R>(&self, writer: impl FnOnce(&mut PaintList) -> R) -> R {
+        self.ctx.graphics_mut(|g| writer(g.list(self.layer_id)))
     }
 
     fn transform_shape(&self, shape: &mut Shape) {
@@ -167,30 +169,30 @@ impl Painter {
     /// NOTE: all coordinates are screen coordinates!
     pub fn add(&self, shape: impl Into<Shape>) -> ShapeIdx {
         if self.fade_to_color == Some(Color32::TRANSPARENT) {
-            self.paint_list().add(self.clip_rect, Shape::Noop)
+            self.paint_list(|l| l.add(self.clip_rect, Shape::Noop))
         } else {
             let mut shape = shape.into();
             self.transform_shape(&mut shape);
-            self.paint_list().add(self.clip_rect, shape)
+            self.paint_list(|l| l.add(self.clip_rect, shape))
         }
     }
 
     /// Add many shapes at once.
     ///
     /// Calling this once is generally faster than calling [`Self::add`] multiple times.
-    pub fn extend(&self, mut shapes: Vec<Shape>) {
+    pub fn extend<I: IntoIterator<Item = Shape>>(&self, shapes: I) {
         if self.fade_to_color == Some(Color32::TRANSPARENT) {
             return;
         }
-        if !shapes.is_empty() {
-            if self.fade_to_color.is_some() {
-                for shape in &mut shapes {
-                    self.transform_shape(shape);
-                }
-            }
-
-            self.paint_list().extend(self.clip_rect, shapes);
-        }
+        if self.fade_to_color.is_some() {
+            let shapes = shapes.into_iter().map(|mut shape| {
+                self.transform_shape(&mut shape);
+                shape
+            });
+            self.paint_list(|l| l.extend(self.clip_rect, shapes));
+        } else {
+            self.paint_list(|l| l.extend(self.clip_rect, shapes));
+        };
     }
 
     /// Modify an existing [`Shape`].
@@ -200,7 +202,7 @@ impl Painter {
         }
         let mut shape = shape.into();
         self.transform_shape(&mut shape);
-        self.paint_list().set(idx, self.clip_rect, shape);
+        self.paint_list(|l| l.set(idx, self.clip_rect, shape));
     }
 }
 
@@ -208,12 +210,17 @@ impl Painter {
 impl Painter {
     #[allow(clippy::needless_pass_by_value)]
     pub fn debug_rect(&self, rect: Rect, color: Color32, text: impl ToString) {
-        self.rect_stroke(rect, 0.0, (1.0, color));
+        self.rect(
+            rect,
+            0.0,
+            color.additive().linear_multiply(0.015),
+            (1.0, color),
+        );
         self.text(
             rect.min,
             Align2::LEFT_TOP,
             text.to_string(),
-            FontId::monospace(14.0),
+            FontId::monospace(12.0),
             color,
         );
     }
@@ -232,13 +239,13 @@ impl Painter {
         color: Color32,
         text: impl ToString,
     ) -> Rect {
-        let galley = self.layout_no_wrap(text.to_string(), FontId::monospace(14.0), color);
+        let galley = self.layout_no_wrap(text.to_string(), FontId::monospace(12.0), color);
         let rect = anchor.anchor_rect(Rect::from_min_size(pos, galley.size()));
         let frame_rect = rect.expand(2.0);
         self.add(Shape::rect_filled(
             frame_rect,
             0.0,
-            Color32::from_black_alpha(240),
+            Color32::from_black_alpha(150),
         ));
         self.galley(rect.min, galley);
         frame_rect
@@ -352,6 +359,16 @@ impl Painter {
         self.line_segment([tip, tip - tip_length * (rot * dir)], stroke);
         self.line_segment([tip, tip - tip_length * (rot.inverse() * dir)], stroke);
     }
+
+    /// An image at the given position.
+    ///
+    /// `uv` should normally be `Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0))`
+    /// unless you want to crop or flip the image.
+    ///
+    /// `tint` is a color multiplier. Use [`Color32::WHITE`] if you don't want to tint the image.
+    pub fn image(&self, texture_id: epaint::TextureId, rect: Rect, uv: Rect, tint: Color32) {
+        self.add(Shape::image(texture_id, rect, uv, tint));
+    }
 }
 
 /// ## Text
@@ -390,7 +407,7 @@ impl Painter {
         color: crate::Color32,
         wrap_width: f32,
     ) -> Arc<Galley> {
-        self.fonts().layout(text, font_id, color, wrap_width)
+        self.fonts(|f| f.layout(text, font_id, color, wrap_width))
     }
 
     /// Will line break at `\n`.
@@ -403,10 +420,10 @@ impl Painter {
         font_id: FontId,
         color: crate::Color32,
     ) -> Arc<Galley> {
-        self.fonts().layout(text, font_id, color, f32::INFINITY)
+        self.fonts(|f| f.layout(text, font_id, color, f32::INFINITY))
     }
 
-    /// Paint text that has already been layed out in a [`Galley`].
+    /// Paint text that has already been laid out in a [`Galley`].
     ///
     /// You can create the [`Galley`] with [`Self::layout`].
     ///
@@ -418,7 +435,7 @@ impl Painter {
         }
     }
 
-    /// Paint text that has already been layed out in a [`Galley`].
+    /// Paint text that has already been laid out in a [`Galley`].
     ///
     /// You can create the [`Galley`] with [`Self::layout`].
     ///
@@ -433,6 +450,6 @@ impl Painter {
 
 fn tint_shape_towards(shape: &mut Shape, target: Color32) {
     epaint::shape_transform::adjust_colors(shape, &|color| {
-        *color = crate::color::tint_color_towards(*color, target);
+        *color = crate::ecolor::tint_color_towards(*color, target);
     });
 }

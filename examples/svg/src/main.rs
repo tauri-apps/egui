@@ -6,7 +6,8 @@
 
 use eframe::egui;
 
-fn main() {
+fn main() -> Result<(), eframe::Error> {
+    env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
     let options = eframe::NativeOptions {
         initial_window_size: Some(egui::vec2(1000.0, 700.0)),
         ..Default::default()
@@ -14,8 +15,8 @@ fn main() {
     eframe::run_native(
         "svg example",
         options,
-        Box::new(|_cc| Box::new(MyApp::default())),
-    );
+        Box::new(|_cc| Box::<MyApp>::default()),
+    )
 }
 
 struct MyApp {
@@ -25,9 +26,10 @@ struct MyApp {
 impl Default for MyApp {
     fn default() -> Self {
         Self {
-            svg_image: egui_extras::RetainedImage::from_svg_bytes(
+            svg_image: egui_extras::RetainedImage::from_svg_bytes_with_size(
                 "rustacean-flat-happy.svg",
                 include_bytes!("rustacean-flat-happy.svg"),
+                egui_extras::image::FitTo::Original,
             )
             .unwrap(),
         }
@@ -43,7 +45,7 @@ impl eframe::App for MyApp {
             ui.separator();
 
             let max_size = ui.available_size();
-            self.svg_image.show_max_size(ui, max_size);
+            self.svg_image.show_size(ui, max_size);
         });
     }
 }

@@ -1,4 +1,4 @@
-use crate::{textures::TextureFilter, Color32};
+use crate::{textures::TextureOptions, Color32};
 
 /// An image stored in RAM.
 ///
@@ -43,7 +43,7 @@ impl ImageData {
 // ----------------------------------------------------------------------------
 
 /// A 2D RGBA color image in RAM.
-#[derive(Clone, Default, PartialEq)]
+#[derive(Clone, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct ColorImage {
     /// width, height.
@@ -101,6 +101,71 @@ impl ColorImage {
         Self { size, pixels }
     }
 
+    pub fn from_rgba_premultiplied(size: [usize; 2], rgba: &[u8]) -> Self {
+        assert_eq!(size[0] * size[1] * 4, rgba.len());
+        let pixels = rgba
+            .chunks_exact(4)
+            .map(|p| Color32::from_rgba_premultiplied(p[0], p[1], p[2], p[3]))
+            .collect();
+        Self { size, pixels }
+    }
+
+    /// A view of the underlying data as `&[u8]`
+    #[cfg(feature = "bytemuck")]
+    pub fn as_raw(&self) -> &[u8] {
+        bytemuck::cast_slice(&self.pixels)
+    }
+
+    /// A view of the underlying data as `&mut [u8]`
+    #[cfg(feature = "bytemuck")]
+    pub fn as_raw_mut(&mut self) -> &mut [u8] {
+        bytemuck::cast_slice_mut(&mut self.pixels)
+    }
+
+    /// Create a new Image from a patch of the current image. This method is especially convenient for screenshotting a part of the app
+    /// since `region` can be interpreted as screen coordinates of the entire screenshot if `pixels_per_point` is provided for the native application.
+    /// The floats of [`emath::Rect`] are cast to usize, rounding them down in order to interpret them as indices to the image data.
+    ///
+    /// Panics if `region.min.x > region.max.x || region.min.y > region.max.y`, or if a region larger than the image is passed.
+    pub fn region(&self, region: &emath::Rect, pixels_per_point: Option<f32>) -> Self {
+        let pixels_per_point = pixels_per_point.unwrap_or(1.0);
+        let min_x = (region.min.x * pixels_per_point) as usize;
+        let max_x = (region.max.x * pixels_per_point) as usize;
+        let min_y = (region.min.y * pixels_per_point) as usize;
+        let max_y = (region.max.y * pixels_per_point) as usize;
+        assert!(min_x <= max_x);
+        assert!(min_y <= max_y);
+        let width = max_x - min_x;
+        let height = max_y - min_y;
+        let mut output = Vec::with_capacity(width * height);
+        let row_stride = self.size[0];
+
+        for row in min_y..max_y {
+            output.extend_from_slice(
+                &self.pixels[row * row_stride + min_x..row * row_stride + max_x],
+            );
+        }
+        Self {
+            size: [width, height],
+            pixels: output,
+        }
+    }
+
+    /// Create a [`ColorImage`] from flat RGB data.
+    ///
+    /// This is what you want to use after having loaded an image file (and if
+    /// you are ignoring the alpha channel - considering it to always be 0xff)
+    ///
+    /// Panics if `size[0] * size[1] * 3 != rgb.len()`.
+    pub fn from_rgb(size: [usize; 2], rgb: &[u8]) -> Self {
+        assert_eq!(size[0] * size[1] * 3, rgb.len());
+        let pixels = rgb
+            .chunks_exact(3)
+            .map(|p| Color32::from_rgb(p[0], p[1], p[2]))
+            .collect();
+        Self { size, pixels }
+    }
+
     /// An example color image, useful for tests.
     pub fn example() -> Self {
         let width = 128;
@@ -112,7 +177,7 @@ impl ColorImage {
                 let s = 1.0;
                 let v = 1.0;
                 let a = y as f32 / height as f32;
-                img[(x, y)] = crate::color::Hsva { h, s, v, a }.into();
+                img[(x, y)] = crate::Hsva { h, s, v, a }.into();
             }
         }
         img
@@ -195,17 +260,19 @@ impl FontImage {
 
     /// Returns the textures as `sRGBA` premultiplied pixels, row by row, top to bottom.
     ///
-    /// `gamma` should normally be set to 1.0.
-    /// If you are having problems with text looking skinny and pixelated, try
-    /// setting a lower gamma, e.g. `0.5`.
-    pub fn srgba_pixels(&'_ self, gamma: f32) -> impl ExactSizeIterator<Item = Color32> + '_ {
+    /// `gamma` should normally be set to `None`.
+    ///
+    /// If you are having problems with text looking skinny and pixelated, try using a low gamma, e.g. `0.4`.
+    pub fn srgba_pixels(
+        &'_ self,
+        gamma: Option<f32>,
+    ) -> impl ExactSizeIterator<Item = Color32> + '_ {
+        let gamma = gamma.unwrap_or(0.55); // TODO(emilk): this default coverage gamma is a magic constant, chosen by eye. I don't even know why we need it.
         self.pixels.iter().map(move |coverage| {
-            // This is arbitrarily chosen to make text look as good as possible.
-            // In particular, it looks good with gamma=1 and the default eframe backend,
-            // which uses linear blending.
-            // See https://github.com/emilk/egui/issues/1410
-            let a = fast_round(coverage.powf(gamma / 2.2) * 255.0);
-            Color32::from_rgba_premultiplied(a, a, a, a) // this makes no sense, but works
+            let alpha = coverage.powf(gamma);
+            // We want to multiply with `vec4(alpha)` in the fragment shader:
+            let a = fast_round(alpha * 255.0);
+            Color32::from_rgba_premultiplied(a, a, a, a)
         })
     }
 
@@ -274,7 +341,7 @@ pub struct ImageDelta {
     /// If [`Self::pos`] is `Some`, this describes a patch of the whole image starting at [`Self::pos`].
     pub image: ImageData,
 
-    pub filter: TextureFilter,
+    pub options: TextureOptions,
 
     /// If `None`, set the whole texture to [`Self::image`].
     ///
@@ -284,19 +351,19 @@ pub struct ImageDelta {
 
 impl ImageDelta {
     /// Update the whole texture.
-    pub fn full(image: impl Into<ImageData>, filter: TextureFilter) -> Self {
+    pub fn full(image: impl Into<ImageData>, options: TextureOptions) -> Self {
         Self {
             image: image.into(),
-            filter,
+            options,
             pos: None,
         }
     }
 
     /// Update a sub-region of an existing texture.
-    pub fn partial(pos: [usize; 2], image: impl Into<ImageData>, filter: TextureFilter) -> Self {
+    pub fn partial(pos: [usize; 2], image: impl Into<ImageData>, options: TextureOptions) -> Self {
         Self {
             image: image.into(),
-            filter,
+            options,
             pos: Some(pos),
         }
     }

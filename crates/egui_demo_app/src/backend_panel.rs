@@ -1,5 +1,3 @@
-use egui::Widget;
-
 /// How often we repaint the demo app by default
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RunMode {
@@ -43,6 +41,7 @@ impl Default for RunMode {
 
 // ----------------------------------------------------------------------------
 
+#[derive(Default)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[cfg_attr(feature = "serde", serde(default))]
 pub struct BackendPanel {
@@ -51,9 +50,6 @@ pub struct BackendPanel {
     #[cfg_attr(feature = "serde", serde(skip))]
     // go back to [`RunMode::Reactive`] mode each time we start
     run_mode: RunMode,
-
-    #[cfg_attr(feature = "serde", serde(skip))]
-    repaint_after_seconds: f32,
 
     /// current slider value for current gui scale
     #[cfg_attr(feature = "serde", serde(skip))]
@@ -65,23 +61,10 @@ pub struct BackendPanel {
     egui_windows: EguiWindows,
 }
 
-impl Default for BackendPanel {
-    fn default() -> Self {
-        Self {
-            open: false,
-            run_mode: Default::default(),
-            repaint_after_seconds: 1.0,
-            pixels_per_point: None,
-            frame_history: Default::default(),
-            egui_windows: Default::default(),
-        }
-    }
-}
-
 impl BackendPanel {
     pub fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         self.frame_history
-            .on_new_frame(ctx.input().time, frame.info().cpu_usage);
+            .on_new_frame(ctx.input(|i| i.time), frame.info().cpu_usage);
 
         match self.run_mode {
             RunMode::Continuous => {
@@ -90,9 +73,6 @@ impl BackendPanel {
             }
             RunMode::Reactive => {
                 // let the computer rest for a bit
-                ctx.request_repaint_after(std::time::Duration::from_secs_f32(
-                    self.repaint_after_seconds,
-                ));
             }
         }
     }
@@ -128,12 +108,13 @@ impl BackendPanel {
             ui.ctx().set_debug_on_hover(debug_on_hover);
         }
 
-        ui.separator();
-
+        #[cfg(target_arch = "wasm32")]
+        #[cfg(feature = "web_screen-reader")]
         {
-            let mut screen_reader = ui.ctx().options().screen_reader;
+            ui.separator();
+            let mut screen_reader = ui.ctx().options(|o| o.screen_reader);
             ui.checkbox(&mut screen_reader, "🔈 Screen reader").on_hover_text("Experimental feature: checking this will turn on the screen reader on supported platforms");
-            ui.ctx().options().screen_reader = screen_reader;
+            ui.ctx().options_mut(|o| o.screen_reader = screen_reader);
         }
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -141,6 +122,15 @@ impl BackendPanel {
             ui.separator();
             if ui.button("Quit").clicked() {
                 frame.close();
+            }
+        }
+
+        if cfg!(debug_assertions) && cfg!(target_arch = "wasm32") {
+            ui.separator();
+            // For testing panic handling on web:
+            #[allow(clippy::manual_assert)]
+            if ui.button("panic!()").clicked() {
+                panic!("intentional panic!");
             }
         }
     }
@@ -161,13 +151,10 @@ impl BackendPanel {
             ui.monospace(format!("{:#?}", frame.info().web_info.location));
         });
 
-        // For instance: `eframe` web sets `pixels_per_point` every frame to force
-        // egui to use the same scale as the web zoom factor.
-        let integration_controls_pixels_per_point = ui.input().raw.pixels_per_point.is_some();
+        // On web, the browser controls `pixels_per_point`.
+        let integration_controls_pixels_per_point = frame.is_web();
         if !integration_controls_pixels_per_point {
-            if let Some(new_pixels_per_point) = self.pixels_per_point_ui(ui, &frame.info()) {
-                ui.ctx().set_pixels_per_point(new_pixels_per_point);
-            }
+            self.pixels_per_point_ui(ui, &frame.info());
         }
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -175,9 +162,13 @@ impl BackendPanel {
             ui.horizontal(|ui| {
                 {
                     let mut fullscreen = frame.info().window_info.fullscreen;
-                    ui.checkbox(&mut fullscreen, "🗖 Fullscreen")
-                        .on_hover_text("Fullscreen the window");
-                    frame.set_fullscreen(fullscreen);
+                    if ui
+                        .checkbox(&mut fullscreen, "🗖 Fullscreen (F11)")
+                        .on_hover_text("Fullscreen the window")
+                        .changed()
+                    {
+                        frame.set_fullscreen(fullscreen);
+                    }
                 }
 
                 if ui
@@ -202,27 +193,36 @@ impl BackendPanel {
         }
     }
 
-    fn pixels_per_point_ui(
-        &mut self,
-        ui: &mut egui::Ui,
-        info: &eframe::IntegrationInfo,
-    ) -> Option<f32> {
-        let pixels_per_point = self.pixels_per_point.get_or_insert_with(|| {
-            info.native_pixels_per_point
-                .unwrap_or_else(|| ui.ctx().pixels_per_point())
-        });
+    fn pixels_per_point_ui(&mut self, ui: &mut egui::Ui, info: &eframe::IntegrationInfo) {
+        let pixels_per_point = self
+            .pixels_per_point
+            .get_or_insert_with(|| ui.ctx().pixels_per_point());
+
+        let mut reset = false;
 
         ui.horizontal(|ui| {
             ui.spacing_mut().slider_width = 90.0;
-            ui.add(
-                egui::Slider::new(pixels_per_point, 0.5..=5.0)
-                    .logarithmic(true)
-                    .clamp_to_range(true)
-                    .text("Scale"),
-            )
-            .on_hover_text("Physical pixels per point.");
+
+            let response = ui
+                .add(
+                    egui::Slider::new(pixels_per_point, 0.5..=5.0)
+                        .logarithmic(true)
+                        .clamp_to_range(true)
+                        .text("Scale"),
+                )
+                .on_hover_text("Physical pixels per point.");
+
+            if response.drag_released() {
+                // We wait until mouse release to activate:
+                ui.ctx().set_pixels_per_point(*pixels_per_point);
+                reset = true;
+            } else if !response.is_pointer_button_down_on() {
+                // When not dragging, show the current pixels_per_point so others can change it.
+                reset = true;
+            }
+
             if let Some(native_pixels_per_point) = info.native_pixels_per_point {
-                let enabled = *pixels_per_point != native_pixels_per_point;
+                let enabled = ui.ctx().pixels_per_point() != native_pixels_per_point;
                 if ui
                     .add_enabled(enabled, egui::Button::new("Reset"))
                     .on_hover_text(format!(
@@ -231,16 +231,13 @@ impl BackendPanel {
                     ))
                     .clicked()
                 {
-                    *pixels_per_point = native_pixels_per_point;
+                    ui.ctx().set_pixels_per_point(native_pixels_per_point);
                 }
             }
         });
 
-        // We wait until mouse release to activate:
-        if ui.ctx().is_using_pointer() {
-            None
-        } else {
-            Some(*pixels_per_point)
+        if reset {
+            self.pixels_per_point = None;
         }
     }
 
@@ -262,17 +259,27 @@ impl BackendPanel {
         } else {
             ui.label("Only running UI code when there are animations or input.");
 
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 0.0;
-                ui.label("(but at least every ");
-                egui::DragValue::new(&mut self.repaint_after_seconds)
-                    .clamp_range(0.1..=10.0)
-                    .speed(0.1)
-                    .suffix(" s")
-                    .ui(ui)
-                    .on_hover_text("Repaint this often, even if there is no input.");
-                ui.label(")");
-            });
+            // Add a test for `request_repaint_after`, but only in debug
+            // builds to keep the noise down in the official demo.
+            if cfg!(debug_assertions) {
+                ui.collapsing("More…", |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("Frame number:");
+                        ui.monospace(ui.ctx().frame_nr().to_string());
+                    });
+                    if ui
+                        .button("Wait 2s, then request repaint after another 3s")
+                        .clicked()
+                    {
+                        log::info!("Waiting 2s before requesting repaint...");
+                        let ctx = ui.ctx().clone();
+                        call_after_delay(std::time::Duration::from_secs(2), move || {
+                            log::info!("Request a repaint in 3s...");
+                            ctx.request_repaint_after(std::time::Duration::from_secs(3));
+                        });
+                    }
+                });
+            }
         }
     }
 }
@@ -332,9 +339,11 @@ impl EguiWindows {
             output_event_history,
         } = self;
 
-        for event in &ctx.output().events {
-            output_event_history.push_back(event.clone());
-        }
+        ctx.output(|o| {
+            for event in &o.events {
+                output_event_history.push_back(event.clone());
+            }
+        });
         while output_event_history.len() > 1000 {
             output_event_history.pop_front();
         }
@@ -382,4 +391,29 @@ impl EguiWindows {
                     });
             });
     }
+}
+
+// ----------------------------------------------------------------------------
+
+#[cfg(not(target_arch = "wasm32"))]
+fn call_after_delay(delay: std::time::Duration, f: impl FnOnce() + Send + 'static) {
+    std::thread::spawn(move || {
+        std::thread::sleep(delay);
+        f();
+    });
+}
+
+#[cfg(target_arch = "wasm32")]
+fn call_after_delay(delay: std::time::Duration, f: impl FnOnce() + Send + 'static) {
+    use wasm_bindgen::prelude::*;
+    let window = web_sys::window().unwrap();
+    let closure = Closure::once(f);
+    let delay_ms = delay.as_millis() as _;
+    window
+        .set_timeout_with_callback_and_timeout_and_arguments_0(
+            closure.as_ref().unchecked_ref(),
+            delay_ms,
+        )
+        .unwrap();
+    closure.forget(); // We must forget it, or else the callback is canceled on drop
 }
