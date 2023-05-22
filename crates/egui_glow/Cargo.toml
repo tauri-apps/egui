@@ -1,6 +1,6 @@
 [package]
 name = "egui_glow_tao"
-version = "0.21.0"
+version = "0.22.0"
 authors = [ "Emil Ernerfeldt <emil.ernerfeldt@gmail.com>" ]
 description = "Bindings for using egui natively using the glow library"
 edition = "2021"
@@ -42,7 +42,7 @@ tracing = { version = "0.1", default-features = false, features = [ "std" ] }
 document-features = { version = "0.2", optional = true }
 
 [target."cfg(not(target_arch = \"wasm32\"))".dependencies]
-egui-winit = { package = "egui-tao", version = "0.21.0", path = "../egui-winit", optional = true, default-features = false }
+egui-winit = { package = "egui-tao", version = "0.22.0", path = "../egui-winit", optional = true, default-features = false }
 puffin = { version = "0.13", optional = true }
 
 [target."cfg(target_arch = \"wasm32\")".dependencies]
@@ -50,7 +50,7 @@ web-sys = { version = "0.3", features = [ "console" ] }
 wasm-bindgen = { version = "0.2" }
 
 [dev-dependencies]
-glutin = { package = "glutin_tao", version = "0.31.0" }
+glutin = { package = "glutin_tao", version = "0.32.0" }
 
 [[example]]
 name = "pure_glow"
