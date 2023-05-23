@@ -139,7 +139,7 @@ impl Painter {
         surface_state.surface.configure(
             &render_state.device,
             &wgpu::SurfaceConfiguration {
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
                 format: render_state.target_format,
                 width: surface_state.width,
                 height: surface_state.height,
