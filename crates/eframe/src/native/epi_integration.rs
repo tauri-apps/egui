@@ -3,6 +3,9 @@ use winit::event_loop::EventLoopWindowTarget;
 #[cfg(target_os = "macos")]
 use winit::platform::macos::WindowBuilderExtMacOS as _;
 
+#[cfg(target_os = "linux")]
+use winit::platform::unix::WindowBuilderExtUnix;
+
 #[cfg(feature = "accesskit")]
 use egui::accesskit;
 use egui::NumExt as _;
@@ -109,7 +112,13 @@ pub fn window_builder<E>(
         // Keep hidden until we've painted something. See https://github.com/emilk/egui/pull/2279
         // We must also keep the window hidden until AccessKit is initialized.
         .with_visible(false);
-
+    #[cfg(target_os = "linux")]
+    {
+        window_builder = window_builder.with_rgba_visual(true);
+        window_builder = window_builder.with_app_paintable(true);
+        window_builder = window_builder.with_double_buffered(true);
+        window_builder = window_builder.with_transparent_draw(!*transparent);
+    }
     #[cfg(target_os = "macos")]
     if *fullsize_content {
         window_builder = window_builder
