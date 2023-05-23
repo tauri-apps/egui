@@ -3,9 +3,7 @@
 
 use std::time::Instant;
 
-use winit::event_loop::{
-    ControlFlow, EventLoop, EventLoopBuilder, EventLoopProxy, EventLoopWindowTarget,
-};
+use winit::event_loop::{ControlFlow, EventLoop, EventLoopProxy, EventLoopWindowTarget};
 
 #[cfg(feature = "accesskit")]
 use egui_winit::accesskit_winit;
@@ -83,37 +81,19 @@ trait WinitApp {
     ) -> Result<EventResult>;
 }
 
-fn create_event_loop_builder(
-    native_options: &mut epi::NativeOptions,
-) -> EventLoopBuilder<UserEvent> {
-    let mut event_loop_builder = winit::event_loop::EventLoopBuilder::with_user_event();
-
-    if let Some(hook) = std::mem::take(&mut native_options.event_loop_builder) {
-        hook(&mut event_loop_builder);
-    }
-
-    event_loop_builder
-}
-
 /// Access a thread-local event loop.
 ///
 /// We reuse the event-loop so we can support closing and opening an eframe window
 /// multiple times. This is just a limitation of winit.
-fn with_event_loop<R>(
-    mut native_options: epi::NativeOptions,
-    f: impl FnOnce(&mut EventLoop<UserEvent>, NativeOptions) -> R,
-) -> R {
+fn with_event_loop<R>(f: impl FnOnce(&mut EventLoop<UserEvent>) -> R) -> R {
     use std::cell::RefCell;
     thread_local!(static EVENT_LOOP: RefCell<Option<EventLoop<UserEvent>>> = RefCell::new(None));
 
     EVENT_LOOP.with(|event_loop| {
-        // Since we want to reference NativeOptions when creating the EventLoop we can't
-        // do that as part of the lazy thread local storage initialization and so we instead
-        // create the event loop lazily here
         let mut event_loop = event_loop.borrow_mut();
-        let event_loop = event_loop
-            .get_or_insert_with(|| create_event_loop_builder(&mut native_options).build());
-        f(event_loop, native_options)
+        let event_loop =
+            event_loop.get_or_insert_with(|| winit::event_loop::EventLoop::with_user_event());
+        f(event_loop)
     })
 }
 
@@ -239,7 +219,7 @@ fn run_and_return(
     // On Windows this clears out events so that we can later create another window.
     // See https://github.com/emilk/egui/pull/1889 for details.
     event_loop.run_return(|_, _, control_flow| {
-        control_flow.set_exit();
+        *control_flow = ControlFlow::Exit;
     });
 
     returned_result
@@ -1177,7 +1157,7 @@ mod wgpu_integration {
             let theme = system_theme.unwrap_or(self.native_options.default_theme);
             integration.egui_ctx.set_visuals(theme.egui_visuals());
 
-            window.set_ime_allowed(true);
+            // window.set_ime_allowed(true);
 
             {
                 let event_loop_proxy = self.repaint_proxy.clone();
@@ -1338,7 +1318,8 @@ mod wgpu_integration {
             event: &winit::event::Event<'_, UserEvent>,
         ) -> Result<EventResult> {
             Ok(match event {
-                winit::event::Event::Resumed => {
+                winit::event::Event::Resumed
+                | winit::event::Event::NewEvents(winit::event::StartCause::Init) => {
                     if let Some(running) = &self.running {
                         if self.window.is_none() {
                             let window = Self::create_window(
@@ -1458,17 +1439,17 @@ mod wgpu_integration {
 
     pub fn run_wgpu(
         app_name: &str,
-        mut native_options: epi::NativeOptions,
+        native_options: epi::NativeOptions,
         app_creator: epi::AppCreator,
     ) -> Result<()> {
         if native_options.run_and_return {
-            with_event_loop(native_options, |event_loop, native_options| {
+            with_event_loop(|event_loop| {
                 let wgpu_eframe =
                     WgpuWinitApp::new(event_loop, app_name, native_options, app_creator);
                 run_and_return(event_loop, wgpu_eframe)
             })
         } else {
-            let event_loop = create_event_loop_builder(&mut native_options).build();
+            let event_loop = winit::event_loop::EventLoop::with_user_event();
             let wgpu_eframe = WgpuWinitApp::new(&event_loop, app_name, native_options, app_creator);
             run_and_exit(event_loop, wgpu_eframe);
         }
@@ -1482,9 +1463,7 @@ pub use wgpu_integration::run_wgpu;
 
 fn system_theme(window: &winit::window::Window, options: &NativeOptions) -> Option<crate::Theme> {
     if options.follow_system_theme {
-        window
-            .theme()
-            .map(super::epi_integration::theme_from_winit_theme)
+        Some(window.theme()).map(super::epi_integration::theme_from_winit_theme)
     } else {
         None
     }
