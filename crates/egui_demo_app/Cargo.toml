@@ -16,7 +16,7 @@ crate-type = ["cdylib", "rlib"]
 
 
 [features]
-default = ["glow", "persistence"]
+default = ["wgpu", "persistence"]
 
 http = ["ehttp", "image", "poll-promise", "egui_extras/image"]
 persistence = ["eframe/persistence", "egui/persistence", "serde"]
