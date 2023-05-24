@@ -104,6 +104,11 @@ pub struct InputState {
     /// and will effectively slow down the animation when FPS drops below 10.
     pub stable_dt: f32,
 
+    /// The native window has the keyboard focus (i.e. is receiving key presses).
+    ///
+    /// False when the user alt-tab away from the application, for instance.
+    pub focused: bool,
+
     /// Which modifier keys are down at the start of the frame?
     pub modifiers: Modifiers,
 
@@ -129,6 +134,7 @@ impl Default for InputState {
             unstable_dt: 1.0 / 60.0,
             predicted_dt: 1.0 / 60.0,
             stable_dt: 1.0 / 60.0,
+            focused: false,
             modifiers: Default::default(),
             keys_down: Default::default(),
             events: Default::default(),
@@ -138,7 +144,11 @@ impl Default for InputState {
 
 impl InputState {
     #[must_use]
-    pub fn begin_frame(mut self, new: RawInput, requested_repaint_last_frame: bool) -> InputState {
+    pub fn begin_frame(
+        mut self,
+        mut new: RawInput,
+        requested_repaint_last_frame: bool,
+    ) -> InputState {
         let time = new.time.unwrap_or(self.time + new.predicted_dt as f64);
         let unstable_dt = (time - self.time) as f32;
 
@@ -160,11 +170,17 @@ impl InputState {
         let mut keys_down = self.keys_down;
         let mut scroll_delta = Vec2::ZERO;
         let mut zoom_factor_delta = 1.0;
-        for event in &new.events {
+        for event in &mut new.events {
             match event {
-                Event::Key { key, pressed, .. } => {
+                Event::Key {
+                    key,
+                    pressed,
+                    repeat,
+                    ..
+                } => {
                     if *pressed {
-                        keys_down.insert(*key);
+                        let first_press = keys_down.insert(*key);
+                        *repeat = !first_press;
                     } else {
                         keys_down.remove(key);
                     }
@@ -178,6 +194,21 @@ impl InputState {
                 _ => {}
             }
         }
+
+        let mut modifiers = new.modifiers;
+
+        let focused_changed = self.focused != new.focused
+            || new
+                .events
+                .iter()
+                .any(|e| matches!(e, Event::WindowFocused(_)));
+        if focused_changed {
+            // It is very common for keys to become stuck when we alt-tab, or a save-dialog opens by Ctrl+S.
+            // Therefore we clear all the modifiers and down keys here to avoid that.
+            modifiers = Default::default();
+            keys_down = Default::default();
+        }
+
         InputState {
             pointer,
             touch_states: self.touch_states,
@@ -190,7 +221,8 @@ impl InputState {
             unstable_dt,
             predicted_dt: new.predicted_dt,
             stable_dt,
-            modifiers: new.modifiers,
+            focused: new.focused,
+            modifiers,
             keys_down,
             events: new.events.clone(), // TODO(emilk): remove clone() and use raw.events
             raw: new,
@@ -245,9 +277,11 @@ impl InputState {
         self.pointer.wants_repaint() || self.scroll_delta != Vec2::ZERO || !self.events.is_empty()
     }
 
-    /// Check for a key press. If found, `true` is returned and the key pressed is consumed, so that this will only return `true` once.
-    pub fn consume_key(&mut self, modifiers: Modifiers, key: Key) -> bool {
-        let mut match_found = false;
+    /// Count presses of a key. If non-zero, the presses are consumed, so that this will only return non-zero once.
+    ///
+    /// Includes key-repeat events.
+    pub fn count_and_consume_key(&mut self, modifiers: Modifiers, key: Key) -> usize {
+        let mut count = 0usize;
 
         self.events.retain(|event| {
             let is_match = matches!(
@@ -255,35 +289,54 @@ impl InputState {
                 Event::Key {
                     key: ev_key,
                     modifiers: ev_mods,
-                    pressed: true
+                    pressed: true,
+                    ..
                 } if *ev_key == key && ev_mods.matches(modifiers)
             );
 
-            match_found |= is_match;
+            count += is_match as usize;
 
             !is_match
         });
 
-        match_found
+        count
+    }
+
+    /// Check for a key press. If found, `true` is returned and the key pressed is consumed, so that this will only return `true` once.
+    ///
+    /// Includes key-repeat events.
+    pub fn consume_key(&mut self, modifiers: Modifiers, key: Key) -> bool {
+        self.count_and_consume_key(modifiers, key) > 0
+    }
+
+    /// Check if the given shortcut has been pressed.
+    ///
+    /// If so, `true` is returned and the key pressed is consumed, so that this will only return `true` once.
+    ///
+    /// Includes key-repeat events.
+    pub fn consume_shortcut(&mut self, shortcut: &KeyboardShortcut) -> bool {
+        let KeyboardShortcut { modifiers, key } = *shortcut;
+        self.consume_key(modifiers, key)
     }
 
     /// Was the given key pressed this frame?
+    ///
+    /// Includes key-repeat events.
     pub fn key_pressed(&self, desired_key: Key) -> bool {
         self.num_presses(desired_key) > 0
     }
 
-    /// How many times were the given key pressed this frame?
+    /// How many times was the given key pressed this frame?
+    ///
+    /// Includes key-repeat events.
     pub fn num_presses(&self, desired_key: Key) -> usize {
         self.events
             .iter()
             .filter(|event| {
                 matches!(
                     event,
-                    Event::Key {
-                        key,
-                        pressed: true,
-                        ..
-                    } if *key == desired_key
+                    Event::Key { key, pressed: true, .. }
+                    if *key == desired_key
                 )
             })
             .count()
@@ -336,7 +389,7 @@ impl InputState {
     /// # egui::__run_test_ui(|ui| {
     /// let mut zoom = 1.0; // no zoom
     /// let mut rotation = 0.0; // no rotation
-    /// let multi_touch = ui.input().multi_touch();
+    /// let multi_touch = ui.input(|i| i.multi_touch());
     /// if let Some(multi_touch) = multi_touch {
     ///     zoom *= multi_touch.zoom_delta;
     ///     rotation += multi_touch.rotation_delta;
@@ -380,6 +433,33 @@ impl InputState {
             }
         }
     }
+
+    #[cfg(feature = "accesskit")]
+    pub fn accesskit_action_requests(
+        &self,
+        id: crate::Id,
+        action: accesskit::Action,
+    ) -> impl Iterator<Item = &accesskit::ActionRequest> {
+        let accesskit_id = id.accesskit_id();
+        self.events.iter().filter_map(move |event| {
+            if let Event::AccessKitActionRequest(request) = event {
+                if request.target == accesskit_id && request.action == action {
+                    return Some(request);
+                }
+            }
+            None
+        })
+    }
+
+    #[cfg(feature = "accesskit")]
+    pub fn has_accesskit_action_request(&self, id: crate::Id, action: accesskit::Action) -> bool {
+        self.accesskit_action_requests(id, action).next().is_some()
+    }
+
+    #[cfg(feature = "accesskit")]
+    pub fn num_accesskit_action_requests(&self, id: crate::Id, action: accesskit::Action) -> usize {
+        self.accesskit_action_requests(id, action).count()
+    }
 }
 
 // ----------------------------------------------------------------------------
@@ -388,9 +468,10 @@ impl InputState {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Click {
     pub pos: Pos2,
-    pub button: PointerButton,
+
     /// 1 or 2 (double-click) or 3 (triple-click)
     pub count: u32,
+
     /// Allows you to check for e.g. shift-click
     pub modifiers: Modifiers,
 }
@@ -412,7 +493,10 @@ pub(crate) enum PointerEvent {
         position: Pos2,
         button: PointerButton,
     },
-    Released(Option<Click>),
+    Released {
+        click: Option<Click>,
+        button: PointerButton,
+    },
 }
 
 impl PointerEvent {
@@ -421,11 +505,11 @@ impl PointerEvent {
     }
 
     pub fn is_release(&self) -> bool {
-        matches!(self, PointerEvent::Released(_))
+        matches!(self, PointerEvent::Released { .. })
     }
 
     pub fn is_click(&self) -> bool {
-        matches!(self, PointerEvent::Released(Some(_click)))
+        matches!(self, PointerEvent::Released { click: Some(_), .. })
     }
 }
 
@@ -580,7 +664,6 @@ impl PointerState {
 
                             Some(Click {
                                 pos,
-                                button,
                                 count,
                                 modifiers,
                             })
@@ -588,7 +671,8 @@ impl PointerState {
                             None
                         };
 
-                        self.pointer_events.push(PointerEvent::Released(click));
+                        self.pointer_events
+                            .push(PointerEvent::Released { click, button });
 
                         self.press_origin = None;
                         self.press_start_time = None;
@@ -716,11 +800,28 @@ impl PointerState {
         self.pointer_events.iter().any(|event| event.is_release())
     }
 
+    /// Was the button given pressed this frame?
+    pub fn button_pressed(&self, button: PointerButton) -> bool {
+        self.pointer_events
+            .iter()
+            .any(|event| matches!(event, &PointerEvent::Pressed{button: b, ..} if button == b))
+    }
+
     /// Was the button given released this frame?
     pub fn button_released(&self, button: PointerButton) -> bool {
         self.pointer_events
             .iter()
-            .any(|event| matches!(event, &PointerEvent::Released(Some(Click{button: b, ..})) if button == b))
+            .any(|event| matches!(event, &PointerEvent::Released{button: b, ..} if button == b))
+    }
+
+    /// Was the primary button pressed this frame?
+    pub fn primary_pressed(&self) -> bool {
+        self.button_pressed(PointerButton::Primary)
+    }
+
+    /// Was the secondary button pressed this frame?
+    pub fn secondary_pressed(&self) -> bool {
+        self.button_pressed(PointerButton::Secondary)
     }
 
     /// Was the primary button released this frame?
@@ -752,16 +853,28 @@ impl PointerState {
 
     /// Was the button given double clicked this frame?
     pub fn button_double_clicked(&self, button: PointerButton) -> bool {
-        self.pointer_events
-            .iter()
-            .any(|event| matches!(&event, PointerEvent::Released(Some(click)) if click.button == button && click.is_double()))
+        self.pointer_events.iter().any(|event| {
+            matches!(
+                &event,
+                PointerEvent::Released {
+                    click: Some(click),
+                    button: b,
+                } if *b == button && click.is_double()
+            )
+        })
     }
 
     /// Was the button given triple clicked this frame?
     pub fn button_triple_clicked(&self, button: PointerButton) -> bool {
-        self.pointer_events
-            .iter()
-            .any(|event| matches!(&event, PointerEvent::Released(Some(click)) if click.button == button && click.is_triple()))
+        self.pointer_events.iter().any(|event| {
+            matches!(
+                &event,
+                PointerEvent::Released {
+                    click: Some(click),
+                    button: b,
+                } if *b == button && click.is_triple()
+            )
+        })
     }
 
     /// Was the primary button clicked this frame?
@@ -774,18 +887,6 @@ impl PointerState {
         self.button_clicked(PointerButton::Secondary)
     }
 
-    // /// Was this button pressed (`!down -> down`) this frame?
-    // /// This can sometimes return `true` even if `any_down() == false`
-    // /// because a press can be shorted than one frame.
-    // pub fn button_pressed(&self, button: PointerButton) -> bool {
-    //     self.pointer_events.iter().any(|event| event.is_press())
-    // }
-
-    // /// Was this button released (`down -> !down`) this frame?
-    // pub fn button_released(&self, button: PointerButton) -> bool {
-    //     self.pointer_events.iter().any(|event| event.is_release())
-    // }
-
     /// Is this button currently down?
     #[inline(always)]
     pub fn button_down(&self, button: PointerButton) -> bool {
@@ -793,8 +894,9 @@ impl PointerState {
     }
 
     /// If the pointer button is down, will it register as a click when released?
-    #[inline(always)]
-    pub(crate) fn could_any_button_be_click(&self) -> bool {
+    ///
+    /// See also [`Self::is_decidedly_dragging`].
+    pub fn could_any_button_be_click(&self) -> bool {
         if !self.any_down() {
             return false;
         }
@@ -810,6 +912,22 @@ impl PointerState {
         }
 
         true
+    }
+
+    /// Just because the mouse is down doesn't mean we are dragging.
+    /// We could be at the start of a click.
+    /// But if the mouse is down long enough, or has moved far enough,
+    /// then we consider it a drag.
+    ///
+    /// This function can return true on the same frame the drag is released,
+    /// but NOT on the first frame it was started.
+    ///
+    /// See also [`Self::could_any_button_be_click`].
+    pub fn is_decidedly_dragging(&self) -> bool {
+        (self.any_down() || self.any_released())
+            && !self.any_pressed()
+            && !self.could_any_button_be_click()
+            && !self.any_click()
     }
 
     /// Is the primary button currently down?
@@ -846,6 +964,7 @@ impl InputState {
             unstable_dt,
             predicted_dt,
             stable_dt,
+            focused,
             modifiers,
             keys_down,
             events,
@@ -889,6 +1008,7 @@ impl InputState {
         ));
         ui.label(format!("predicted_dt: {:.1} ms", 1e3 * predicted_dt));
         ui.label(format!("stable_dt:    {:.1} ms", 1e3 * stable_dt));
+        ui.label(format!("focused:   {}", focused));
         ui.label(format!("modifiers: {:#?}", modifiers));
         ui.label(format!("keys_down: {:?}", keys_down));
         ui.scope(|ui| {

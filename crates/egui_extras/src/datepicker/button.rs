@@ -1,24 +1,24 @@
 use super::popup::DatePickerPopup;
-use chrono::{Date, Utc};
-use egui::{Area, Button, Frame, Key, Order, RichText, Ui, Widget};
+use chrono::NaiveDate;
+use egui::{Area, Button, Frame, InnerResponse, Key, Order, RichText, Ui, Widget};
 
-#[derive(Default, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+#[derive(Default, Clone, serde::Deserialize, serde::Serialize)]
 pub(crate) struct DatePickerButtonState {
     pub picker_visible: bool,
 }
 
 pub struct DatePickerButton<'a> {
-    selection: &'a mut Date<Utc>,
+    selection: &'a mut NaiveDate,
     id_source: Option<&'a str>,
     combo_boxes: bool,
     arrows: bool,
     calendar: bool,
     calendar_week: bool,
+    show_icon: bool,
 }
 
 impl<'a> DatePickerButton<'a> {
-    pub fn new(selection: &'a mut Date<Utc>) -> Self {
+    pub fn new(selection: &'a mut NaiveDate) -> Self {
         Self {
             selection,
             id_source: None,
@@ -26,6 +26,7 @@ impl<'a> DatePickerButton<'a> {
             arrows: true,
             calendar: true,
             calendar_week: true,
+            show_icon: true,
         }
     }
 
@@ -59,30 +60,38 @@ impl<'a> DatePickerButton<'a> {
         self.calendar_week = week;
         self
     }
+
+    /// Show the calender icon on the button. (Default: true)
+    pub fn show_icon(mut self, show_icon: bool) -> Self {
+        self.show_icon = show_icon;
+        self
+    }
 }
 
 impl<'a> Widget for DatePickerButton<'a> {
     fn ui(self, ui: &mut Ui) -> egui::Response {
-        let id = ui.make_persistent_id(&self.id_source);
+        let id = ui.make_persistent_id(self.id_source);
         let mut button_state = ui
-            .memory()
-            .data
-            .get_persisted::<DatePickerButtonState>(id)
+            .memory_mut(|mem| mem.data.get_persisted::<DatePickerButtonState>(id))
             .unwrap_or_default();
 
-        let mut text = RichText::new(format!("{} 📆", self.selection.format("%Y-%m-%d")));
+        let mut text = if self.show_icon {
+            RichText::new(format!("{} 📆", self.selection.format("%Y-%m-%d")))
+        } else {
+            RichText::new(format!("{}", self.selection.format("%Y-%m-%d")))
+        };
         let visuals = ui.visuals().widgets.open;
         if button_state.picker_visible {
             text = text.color(visuals.text_color());
         }
         let mut button = Button::new(text);
         if button_state.picker_visible {
-            button = button.fill(visuals.bg_fill).stroke(visuals.bg_stroke);
+            button = button.fill(visuals.weak_bg_fill).stroke(visuals.bg_stroke);
         }
-        let button_response = ui.add(button);
+        let mut button_response = ui.add(button);
         if button_response.clicked() {
             button_state.picker_visible = true;
-            ui.memory().data.insert_persisted(id, button_state.clone());
+            ui.memory_mut(|mem| mem.data.insert_persisted(id, button_state.clone()));
         }
 
         if button_state.picker_visible {
@@ -101,33 +110,41 @@ impl<'a> Widget for DatePickerButton<'a> {
 
             //TODO(elwerene): Better positioning
 
-            let area_response = Area::new(ui.make_persistent_id(&self.id_source))
+            let InnerResponse {
+                inner: saved,
+                response: area_response,
+            } = Area::new(ui.make_persistent_id(self.id_source))
                 .order(Order::Foreground)
                 .fixed_pos(pos)
                 .show(ui.ctx(), |ui| {
                     let frame = Frame::popup(ui.style());
-                    frame.show(ui, |ui| {
-                        ui.set_min_width(width);
-                        ui.set_max_width(width);
+                    frame
+                        .show(ui, |ui| {
+                            ui.set_min_width(width);
+                            ui.set_max_width(width);
 
-                        DatePickerPopup {
-                            selection: self.selection,
-                            button_id: id,
-                            combo_boxes: self.combo_boxes,
-                            arrows: self.arrows,
-                            calendar: self.calendar,
-                            calendar_week: self.calendar_week,
-                        }
-                        .draw(ui);
-                    })
-                })
-                .response;
+                            DatePickerPopup {
+                                selection: self.selection,
+                                button_id: id,
+                                combo_boxes: self.combo_boxes,
+                                arrows: self.arrows,
+                                calendar: self.calendar,
+                                calendar_week: self.calendar_week,
+                            }
+                            .draw(ui)
+                        })
+                        .inner
+                });
+
+            if saved {
+                button_response.mark_changed();
+            }
 
             if !button_response.clicked()
-                && (ui.input().key_pressed(Key::Escape) || area_response.clicked_elsewhere())
+                && (ui.input(|i| i.key_pressed(Key::Escape)) || area_response.clicked_elsewhere())
             {
                 button_state.picker_visible = false;
-                ui.memory().data.insert_persisted(id, button_state);
+                ui.memory_mut(|mem| mem.data.insert_persisted(id, button_state));
             }
         }
 

@@ -1,4 +1,4 @@
-use std::os::raw::c_void;
+use raw_window_handle::HasRawDisplayHandle;
 
 /// Handles interfacing with the OS clipboard.
 ///
@@ -25,11 +25,16 @@ pub struct Clipboard {
 }
 
 impl Clipboard {
-    #[allow(unused_variables)]
-    pub fn new(#[allow(unused_variables)] wayland_display: Option<*mut c_void>) -> Self {
+    /// Construct a new instance
+    ///
+    /// # Safety
+    ///
+    /// The returned `Clipboard` must not outlive the input `_display_target`.
+    pub fn new(_display_target: &dyn HasRawDisplayHandle) -> Self {
         Self {
             #[cfg(all(feature = "arboard", not(target_os = "android")))]
             arboard: init_arboard(),
+
             #[cfg(all(
                 any(
                     target_os = "linux",
@@ -40,7 +45,8 @@ impl Clipboard {
                 ),
                 feature = "smithay-clipboard"
             ))]
-            smithay: init_smithay_clipboard(wayland_display),
+            smithay: init_smithay_clipboard(_display_target),
+
             clipboard: Default::default(),
         }
     }
@@ -60,7 +66,7 @@ impl Clipboard {
             return match clipboard.load() {
                 Ok(text) => Some(text),
                 Err(err) => {
-                    tracing::error!("Paste error: {}", err);
+                    log::error!("smithay paste error: {err}");
                     None
                 }
             };
@@ -71,7 +77,7 @@ impl Clipboard {
             return match clipboard.get_text() {
                 Ok(text) => Some(text),
                 Err(err) => {
-                    tracing::error!("Paste error: {}", err);
+                    log::error!("arboard paste error: {err}");
                     None
                 }
             };
@@ -99,7 +105,7 @@ impl Clipboard {
         #[cfg(all(feature = "arboard", not(target_os = "android")))]
         if let Some(clipboard) = &mut self.arboard {
             if let Err(err) = clipboard.set_text(text) {
-                tracing::error!("Copy/Cut error: {}", err);
+                log::error!("arboard copy/cut error: {err}");
             }
             return;
         }
@@ -110,10 +116,11 @@ impl Clipboard {
 
 #[cfg(all(feature = "arboard", not(target_os = "android")))]
 fn init_arboard() -> Option<arboard::Clipboard> {
+    log::debug!("Initializing arboard clipboard…");
     match arboard::Clipboard::new() {
         Ok(clipboard) => Some(clipboard),
         Err(err) => {
-            tracing::error!("Failed to initialize clipboard: {}", err);
+            log::warn!("Failed to initialize arboard clipboard: {err}");
             None
         }
     }
@@ -130,13 +137,20 @@ fn init_arboard() -> Option<arboard::Clipboard> {
     feature = "smithay-clipboard"
 ))]
 fn init_smithay_clipboard(
-    wayland_display: Option<*mut c_void>,
+    _display_target: &dyn HasRawDisplayHandle,
 ) -> Option<smithay_clipboard::Clipboard> {
-    if let Some(display) = wayland_display {
+    use raw_window_handle::RawDisplayHandle;
+    if let RawDisplayHandle::Wayland(display) = _display_target.raw_display_handle() {
+        log::debug!("Initializing smithay clipboard…");
         #[allow(unsafe_code)]
-        Some(unsafe { smithay_clipboard::Clipboard::new(display) })
+        Some(unsafe { smithay_clipboard::Clipboard::new(display.display) })
     } else {
-        tracing::error!("Cannot initialize smithay clipboard without a display handle!");
+        #[cfg(feature = "wayland")]
+        log::debug!("Cannot init smithay clipboard without a Wayland display handle");
+        #[cfg(not(feature = "wayland"))]
+        log::debug!(
+            "Cannot init smithay clipboard: the 'wayland' feature of 'egui-winit' is not enabled"
+        );
         None
     }
 }

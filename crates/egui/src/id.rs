@@ -45,16 +45,16 @@ impl Id {
 
     /// Generate a new [`Id`] by hashing some source (e.g. a string or integer).
     pub fn new(source: impl std::hash::Hash) -> Id {
-        use std::hash::Hasher;
-        let mut hasher = epaint::ahash::AHasher::default();
+        use std::hash::{BuildHasher, Hasher};
+        let mut hasher = epaint::ahash::RandomState::with_seeds(1, 2, 3, 4).build_hasher();
         source.hash(&mut hasher);
         Id(hasher.finish())
     }
 
     /// Generate a new [`Id`] by hashing the parent [`Id`] and the given argument.
     pub fn with(self, child: impl std::hash::Hash) -> Id {
-        use std::hash::Hasher;
-        let mut hasher = epaint::ahash::AHasher::default();
+        use std::hash::{BuildHasher, Hasher};
+        let mut hasher = epaint::ahash::RandomState::with_seeds(1, 2, 3, 4).build_hasher();
         hasher.write_u64(self.0);
         child.hash(&mut hasher);
         Id(hasher.finish())
@@ -69,11 +69,31 @@ impl Id {
     pub(crate) fn value(&self) -> u64 {
         self.0
     }
+
+    #[cfg(feature = "accesskit")]
+    pub(crate) fn accesskit_id(&self) -> accesskit::NodeId {
+        std::num::NonZeroU64::new(self.0).unwrap().into()
+    }
 }
 
 impl std::fmt::Debug for Id {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:016X}", self.0)
+    }
+}
+
+/// Convenience
+impl From<&'static str> for Id {
+    #[inline]
+    fn from(string: &'static str) -> Self {
+        Self::new(string)
+    }
+}
+
+impl From<String> for Id {
+    #[inline]
+    fn from(string: String) -> Self {
+        Self::new(string)
     }
 }
 
@@ -137,9 +157,9 @@ impl std::hash::Hasher for IdHasher {
 
 #[derive(Copy, Clone, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
-pub struct BuilIdHasher {}
+pub struct BuildIdHasher {}
 
-impl std::hash::BuildHasher for BuilIdHasher {
+impl std::hash::BuildHasher for BuildIdHasher {
     type Hasher = IdHasher;
 
     #[inline(always)]
@@ -148,5 +168,8 @@ impl std::hash::BuildHasher for BuilIdHasher {
     }
 }
 
+/// `IdSet` is a `HashSet<Id>` optimized by knowing that [`Id`] has good entropy, and doesn't need more hashing.
+pub type IdSet = std::collections::HashSet<Id, BuildIdHasher>;
+
 /// `IdMap<V>` is a `HashMap<Id, V>` optimized by knowing that [`Id`] has good entropy, and doesn't need more hashing.
-pub type IdMap<V> = std::collections::HashMap<Id, V, BuilIdHasher>;
+pub type IdMap<V> = std::collections::HashMap<Id, V, BuildIdHasher>;

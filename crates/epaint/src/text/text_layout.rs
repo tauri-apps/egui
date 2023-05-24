@@ -70,7 +70,7 @@ pub fn layout(fonts: &mut FontsImpl, job: Arc<LayoutJob>) -> Galley {
         for (i, row) in rows.iter_mut().enumerate() {
             let is_last_row = i + 1 == num_rows;
             let justify_row = justify && !row.ends_with_newline && !is_last_row;
-            halign_and_jusitfy_row(
+            halign_and_justify_row(
                 point_scale,
                 row,
                 job.halign,
@@ -123,7 +123,8 @@ fn layout_section(
             paragraph.glyphs.push(Glyph {
                 chr,
                 pos: pos2(paragraph.cursor_x, f32::NAN),
-                size: vec2(glyph_info.advance_width, font_height),
+                size: vec2(glyph_info.advance_width, glyph_info.row_height),
+                ascent: glyph_info.ascent,
                 uv_rect: glyph_info.uv_rect,
                 section_index,
             });
@@ -336,7 +337,7 @@ fn replace_last_glyph_with_overflow_character(
     }
 }
 
-fn halign_and_jusitfy_row(
+fn halign_and_justify_row(
     point_scale: PointScale,
     row: &mut Row,
     halign: Align,
@@ -434,17 +435,31 @@ fn galley_from_rows(point_scale: PointScale, job: Arc<LayoutJob>, mut rows: Vec<
     let mut max_x: f32 = 0.0;
     for row in &mut rows {
         let mut row_height = first_row_min_height.max(row.rect.height());
+        let mut row_ascent = 0.0f32;
         first_row_min_height = 0.0;
-        for glyph in &row.glyphs {
-            row_height = row_height.max(glyph.size.y);
+
+        // take metrics from the highest font in this row
+        if let Some(glyph) = row
+            .glyphs
+            .iter()
+            .max_by(|a, b| a.size.y.partial_cmp(&b.size.y).unwrap())
+        {
+            row_height = glyph.size.y;
+            row_ascent = glyph.ascent;
         }
         row_height = point_scale.round_to_pixel(row_height);
 
         // Now positions each glyph:
         for glyph in &mut row.glyphs {
             let format = &job.sections[glyph.section_index as usize].format;
-            glyph.pos.y = cursor_y + format.valign.to_factor() * (row_height - glyph.size.y);
-            glyph.pos.y = point_scale.round_to_pixel(glyph.pos.y);
+
+            let align_offset = match format.valign {
+                Align::Center | Align::Max => row_ascent,
+
+                // raised text.
+                Align::Min => glyph.ascent,
+            };
+            glyph.pos.y = cursor_y + align_offset;
         }
 
         row.rect.min.y = cursor_y;
@@ -493,8 +508,8 @@ fn format_summary(job: &LayoutJob) -> FormatSummary {
     let mut format_summary = FormatSummary::default();
     for section in &job.sections {
         format_summary.any_background |= section.format.background != Color32::TRANSPARENT;
-        format_summary.any_underline |= section.format.underline != Stroke::none();
-        format_summary.any_strikethrough |= section.format.strikethrough != Stroke::none();
+        format_summary.any_underline |= section.format.underline != Stroke::NONE;
+        format_summary.any_strikethrough |= section.format.strikethrough != Stroke::NONE;
     }
     format_summary
 }
@@ -665,7 +680,7 @@ fn add_row_hline(
     for glyph in &row.glyphs {
         let (stroke, y) = stroke_and_y(glyph);
 
-        if stroke == Stroke::none() {
+        if stroke == Stroke::NONE {
             end_line(line_start.take(), last_right_x);
         } else if let Some((existing_stroke, start)) = line_start {
             if existing_stroke == stroke && start.y == y {
@@ -719,11 +734,11 @@ struct RowBreakCandidates {
     /// is always the primary candidate.
     space: Option<usize>,
 
-    /// Logograms (single character representing a whole word) are good candidates for line break.
-    logogram: Option<usize>,
+    /// Logograms (single character representing a whole word) or kana (Japanese hiragana and katakana) are good candidates for line break.
+    cjk: Option<usize>,
 
-    /// Kana (Japanese hiragana and katakana) may be line broken unless before a gyōtō kinsoku character.
-    kana: Option<usize>,
+    /// Breaking anywhere before a CJK character is acceptable too.
+    pre_cjk: Option<usize>,
 
     /// Breaking at a dash is a super-
     /// good idea.
@@ -744,27 +759,30 @@ impl RowBreakCandidates {
         const NON_BREAKING_SPACE: char = '\u{A0}';
         if chr.is_whitespace() && chr != NON_BREAKING_SPACE {
             self.space = Some(index);
-        } else if is_cjk_ideograph(chr) {
-            self.logogram = Some(index);
+        } else if is_cjk(chr) && (glyphs.len() == 1 || is_cjk_break_allowed(glyphs[1].chr)) {
+            self.cjk = Some(index);
         } else if chr == '-' {
             self.dash = Some(index);
         } else if chr.is_ascii_punctuation() {
             self.punctuation = Some(index);
-        } else if is_kana(chr) && (glyphs.len() == 1 || !is_gyoto_kinsoku(glyphs[1].chr)) {
-            self.kana = Some(index);
+        } else if glyphs.len() > 1 && is_cjk(glyphs[1].chr) {
+            self.pre_cjk = Some(index);
         }
         self.any = Some(index);
     }
 
-    fn has_word_boundary(&self) -> bool {
-        self.space.is_some() || self.logogram.is_some()
+    fn word_boundary(&self) -> Option<usize> {
+        [self.space, self.cjk, self.pre_cjk]
+            .into_iter()
+            .max()
+            .flatten()
     }
 
     fn has_good_candidate(&self, break_anywhere: bool) -> bool {
         if break_anywhere {
             self.any.is_some()
         } else {
-            self.has_word_boundary()
+            self.word_boundary().is_some()
         }
     }
 
@@ -772,9 +790,7 @@ impl RowBreakCandidates {
         if break_anywhere {
             self.any
         } else {
-            self.space
-                .or(self.kana)
-                .or(self.logogram)
+            self.word_boundary()
                 .or(self.dash)
                 .or(self.punctuation)
                 .or(self.any)
@@ -796,10 +812,15 @@ fn is_kana(c: char) -> bool {
 }
 
 #[inline]
-fn is_gyoto_kinsoku(c: char) -> bool {
-    // Gyōtō (meaning "beginning of line") kinsoku characters in Japanese typesetting are characters that may not appear at the start of a line, according to kinsoku shori rules.
-    // The list of gyōtō kinsoku characters can be found at https://en.wikipedia.org/wiki/Line_breaking_rules_in_East_Asian_languages#Characters_not_permitted_on_the_start_of_a_line.
-    ")]｝〕〉》」』】〙〗〟'\"｠»ヽヾーァィゥェォッャュョヮヵヶぁぃぅぇぉっゃゅょゎゕゖㇰㇱㇲㇳㇴㇵㇶㇷㇸㇹㇺㇻㇼㇽㇾㇿ々〻‐゠–〜?!‼⁇⁈⁉・、:;,。.".contains(c)
+fn is_cjk(c: char) -> bool {
+    // TODO: Add support for Korean Hangul.
+    is_cjk_ideograph(c) || is_kana(c)
+}
+
+#[inline]
+fn is_cjk_break_allowed(c: char) -> bool {
+    // See: https://en.wikipedia.org/wiki/Line_breaking_rules_in_East_Asian_languages#Characters_not_permitted_on_the_start_of_a_line.
+    !")]｝〕〉》」』】〙〗〟'\"｠»ヽヾーァィゥェォッャュョヮヵヶぁぃぅぇぉっゃゅょゎゕゖㇰㇱㇲㇳㇴㇵㇶㇷㇸㇹㇺㇻㇼㇽㇾㇿ々〻‐゠–〜?!‼⁇⁈⁉・、:;,。.".contains(c)
 }
 
 // ----------------------------------------------------------------------------
@@ -811,4 +832,42 @@ fn test_zero_max_width() {
     layout_job.wrap.max_width = 0.0;
     let galley = super::layout(&mut fonts, layout_job.into());
     assert_eq!(galley.rows.len(), 1);
+}
+
+#[test]
+fn test_cjk() {
+    let mut fonts = FontsImpl::new(1.0, 1024, super::FontDefinitions::default());
+    let mut layout_job = LayoutJob::single_section(
+        "日本語とEnglishの混在した文章".into(),
+        super::TextFormat::default(),
+    );
+    layout_job.wrap.max_width = 90.0;
+    let galley = super::layout(&mut fonts, layout_job.into());
+    assert_eq!(
+        galley
+            .rows
+            .iter()
+            .map(|row| row.glyphs.iter().map(|g| g.chr).collect::<String>())
+            .collect::<Vec<_>>(),
+        vec!["日本語と", "Englishの混在", "した文章"]
+    );
+}
+
+#[test]
+fn test_pre_cjk() {
+    let mut fonts = FontsImpl::new(1.0, 1024, super::FontDefinitions::default());
+    let mut layout_job = LayoutJob::single_section(
+        "日本語とEnglishの混在した文章".into(),
+        super::TextFormat::default(),
+    );
+    layout_job.wrap.max_width = 110.0;
+    let galley = super::layout(&mut fonts, layout_job.into());
+    assert_eq!(
+        galley
+            .rows
+            .iter()
+            .map(|row| row.glyphs.iter().map(|g| g.chr).collect::<String>())
+            .collect::<Vec<_>>(),
+        vec!["日本語とEnglish", "の混在した文章"]
+    );
 }

@@ -1,5 +1,6 @@
 use crate::{
     mutex::{Mutex, RwLock},
+    text::FontTweak,
     TextureAtlas,
 };
 use emath::{vec2, Vec2};
@@ -8,7 +9,7 @@ use std::sync::Arc;
 
 // ----------------------------------------------------------------------------
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct UvRect {
     /// X/Y offset for nice rendering (unit: points).
@@ -31,22 +32,40 @@ impl UvRect {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GlyphInfo {
+    /// Used for pair-kerning.
+    ///
+    /// Doesn't need to be unique.
+    /// Use `ab_glyph::GlyphId(0)` if you just want to have an id, and don't care.
     pub(crate) id: ab_glyph::GlyphId,
 
     /// Unit: points.
     pub advance_width: f32,
 
-    /// Texture coordinates. None for space.
+    /// `ascent` value from the font metrics.
+    /// this is the distance from the top to the baseline.
+    ///
+    /// Unit: points.
+    pub ascent: f32,
+
+    /// row height computed from the font metrics.
+    ///
+    /// Unit: points.
+    pub row_height: f32,
+
+    /// Texture coordinates.
     pub uv_rect: UvRect,
 }
 
 impl Default for GlyphInfo {
+    /// Basically a zero-width space.
     fn default() -> Self {
         Self {
             id: ab_glyph::GlyphId(0),
             advance_width: 0.0,
+            ascent: 0.0,
+            row_height: 0.0,
             uv_rect: Default::default(),
         }
     }
@@ -64,6 +83,7 @@ pub struct FontImpl {
     height_in_points: f32,
     // move each character by this much (hack)
     y_offset: f32,
+    ascent: f32,
     pixels_per_point: f32,
     glyph_info_cache: RwLock<ahash::HashMap<char, GlyphInfo>>, // TODO(emilk): standard Mutex
     atlas: Arc<Mutex<TextureAtlas>>,
@@ -75,20 +95,37 @@ impl FontImpl {
         pixels_per_point: f32,
         name: String,
         ab_glyph_font: ab_glyph::FontArc,
-        scale_in_pixels: u32,
-        y_offset_points: f32,
+        scale_in_pixels: f32,
+        tweak: FontTweak,
     ) -> FontImpl {
-        assert!(scale_in_pixels > 0);
+        assert!(scale_in_pixels > 0.0);
         assert!(pixels_per_point > 0.0);
 
-        let height_in_points = scale_in_pixels as f32 / pixels_per_point;
+        use ab_glyph::*;
+        let scaled = ab_glyph_font.as_scaled(scale_in_pixels);
+        let ascent = scaled.ascent() / pixels_per_point;
+        let descent = scaled.descent() / pixels_per_point;
+        let line_gap = scaled.line_gap() / pixels_per_point;
 
-        // TODO(emilk): use these font metrics?
-        // use ab_glyph::ScaleFont as _;
-        // let scaled = ab_glyph_font.as_scaled(scale_in_pixels as f32);
-        // dbg!(scaled.ascent());
-        // dbg!(scaled.descent());
-        // dbg!(scaled.line_gap());
+        // Tweak the scale as the user desired
+        let scale_in_pixels = scale_in_pixels * tweak.scale;
+
+        let baseline_offset = {
+            let scale_in_points = scale_in_pixels / pixels_per_point;
+            scale_in_points * tweak.baseline_offset_factor
+        };
+
+        let y_offset_points = {
+            let scale_in_points = scale_in_pixels / pixels_per_point;
+            scale_in_points * tweak.y_offset_factor
+        } + tweak.y_offset;
+
+        // center scaled glyphs properly
+        let y_offset_points = y_offset_points + (tweak.scale - 1.0) * 0.5 * (ascent + descent);
+
+        // Round to an even number of physical pixels to get even kerning.
+        // See https://github.com/emilk/egui/issues/382
+        let scale_in_pixels = scale_in_pixels.round() as u32;
 
         // Round to closest pixel:
         let y_offset = (y_offset_points * pixels_per_point).round() / pixels_per_point;
@@ -97,14 +134,18 @@ impl FontImpl {
             name,
             ab_glyph_font,
             scale_in_pixels,
-            height_in_points,
+            height_in_points: ascent - descent + line_gap,
             y_offset,
+            ascent: ascent + baseline_offset,
             pixels_per_point,
             glyph_info_cache: Default::default(),
             atlas,
         }
     }
 
+    /// Code points that will always be replaced by the replacement character.
+    ///
+    /// See also [`invisible_char`].
     fn ignore_character(&self, chr: char) -> bool {
         if self.name == "emoji-icon-font" {
             // HACK: https://github.com/emilk/egui/issues/1284 https://github.com/jslegers/emoji-icon-font/issues/18
@@ -142,7 +183,7 @@ impl FontImpl {
         }
 
         if self.ignore_character(c) {
-            return None;
+            return None; // these will result in the replacement character when rendering
         }
 
         if c == '\t' {
@@ -156,29 +197,37 @@ impl FontImpl {
             }
         }
 
+        if c == '\u{2009}' {
+            // Thin space, often used as thousands deliminator: 1 234 567 890
+            // https://www.compart.com/en/unicode/U+2009
+            // https://en.wikipedia.org/wiki/Thin_space
+
+            if let Some(space) = self.glyph_info(' ') {
+                let em = self.height_in_points; // TODO(emilk): is this right?
+                let advance_width = f32::min(em / 6.0, space.advance_width * 0.5);
+                let glyph_info = GlyphInfo {
+                    advance_width,
+                    ..GlyphInfo::default()
+                };
+                self.glyph_info_cache.write().insert(c, glyph_info);
+                return Some(glyph_info);
+            }
+        }
+
+        if invisible_char(c) {
+            let glyph_info = GlyphInfo::default();
+            self.glyph_info_cache.write().insert(c, glyph_info);
+            return Some(glyph_info);
+        }
+
         // Add new character:
         use ab_glyph::Font as _;
         let glyph_id = self.ab_glyph_font.glyph_id(c);
 
         if glyph_id.0 == 0 {
-            if invisible_char(c) {
-                // hack
-                let glyph_info = GlyphInfo::default();
-                self.glyph_info_cache.write().insert(c, glyph_info);
-                Some(glyph_info)
-            } else {
-                None // unsupported character
-            }
+            None // unsupported character
         } else {
-            let glyph_info = allocate_glyph(
-                &mut self.atlas.lock(),
-                &self.ab_glyph_font,
-                glyph_id,
-                self.scale_in_pixels as f32,
-                self.y_offset,
-                self.pixels_per_point,
-            );
-
+            let glyph_info = self.allocate_glyph(glyph_id);
             self.glyph_info_cache.write().insert(c, glyph_info);
             Some(glyph_info)
         }
@@ -206,6 +255,62 @@ impl FontImpl {
     #[inline(always)]
     pub fn pixels_per_point(&self) -> f32 {
         self.pixels_per_point
+    }
+
+    fn allocate_glyph(&self, glyph_id: ab_glyph::GlyphId) -> GlyphInfo {
+        assert!(glyph_id.0 != 0);
+        use ab_glyph::{Font as _, ScaleFont};
+
+        let glyph = glyph_id.with_scale_and_position(
+            self.scale_in_pixels as f32,
+            ab_glyph::Point { x: 0.0, y: 0.0 },
+        );
+
+        let uv_rect = self.ab_glyph_font.outline_glyph(glyph).map(|glyph| {
+            let bb = glyph.px_bounds();
+            let glyph_width = bb.width() as usize;
+            let glyph_height = bb.height() as usize;
+            if glyph_width == 0 || glyph_height == 0 {
+                UvRect::default()
+            } else {
+                let atlas = &mut self.atlas.lock();
+                let (glyph_pos, image) = atlas.allocate((glyph_width, glyph_height));
+                glyph.draw(|x, y, v| {
+                    if v > 0.0 {
+                        let px = glyph_pos.0 + x as usize;
+                        let py = glyph_pos.1 + y as usize;
+                        image[(px, py)] = v;
+                    }
+                });
+
+                let offset_in_pixels = vec2(bb.min.x, bb.min.y);
+                let offset = offset_in_pixels / self.pixels_per_point + self.y_offset * Vec2::Y;
+                UvRect {
+                    offset,
+                    size: vec2(glyph_width as f32, glyph_height as f32) / self.pixels_per_point,
+                    min: [glyph_pos.0 as u16, glyph_pos.1 as u16],
+                    max: [
+                        (glyph_pos.0 + glyph_width) as u16,
+                        (glyph_pos.1 + glyph_height) as u16,
+                    ],
+                }
+            }
+        });
+        let uv_rect = uv_rect.unwrap_or_default();
+
+        let advance_width_in_points = self
+            .ab_glyph_font
+            .as_scaled(self.scale_in_pixels as f32)
+            .h_advance(glyph_id)
+            / self.pixels_per_point;
+
+        GlyphInfo {
+            id: glyph_id,
+            advance_width: advance_width_in_points,
+            ascent: self.ascent,
+            row_height: self.row_height(),
+            uv_rect,
+        }
     }
 }
 
@@ -265,6 +370,12 @@ impl Font {
         slf
     }
 
+    pub fn preload_characters(&mut self, s: &str) {
+        for c in s.chars() {
+            self.glyph_info(c);
+        }
+    }
+
     pub fn preload_common_characters(&mut self) {
         // Preload the printable ASCII characters [32, 126] (which excludes control codes):
         const FIRST_ASCII: usize = 32; // 32 == space
@@ -276,7 +387,7 @@ impl Font {
         self.glyph_info(crate::text::PASSWORD_REPLACEMENT_CHAR);
     }
 
-    /// All supported characters
+    /// All supported characters.
     pub fn characters(&mut self) -> &BTreeSet<char> {
         self.characters.get_or_insert_with(|| {
             let mut characters = BTreeSet::new();
@@ -308,6 +419,16 @@ impl Font {
     /// Width of this character in points.
     pub fn glyph_width(&mut self, c: char) -> f32 {
         self.glyph_info(c).1.advance_width
+    }
+
+    /// Can we display this glyph?
+    pub fn has_glyph(&mut self, c: char) -> bool {
+        self.glyph_info(c) != self.replacement_glyph // TODO(emilk): this is a false negative if the user asks about the replacement character itself 🤦‍♂️
+    }
+
+    /// Can we display all the glyphs in this text?
+    pub fn has_glyphs(&mut self, s: &str) -> bool {
+        s.chars().all(|c| self.has_glyph(c))
     }
 
     /// `\n` will (intentionally) show up as the replacement character.
@@ -343,65 +464,49 @@ impl Font {
     }
 }
 
+/// Code points that will always be invisible (zero width).
+///
+/// See also [`FontImpl::ignore_character`].
 #[inline]
 fn invisible_char(c: char) -> bool {
+    if c == '\r' {
+        // A character most vile and pernicious. Don't display it.
+        return true;
+    }
+
     // See https://github.com/emilk/egui/issues/336
 
     // From https://www.fileformat.info/info/unicode/category/Cf/list.htm
-    ('\u{200B}'..='\u{206F}').contains(&c) // TODO(emilk): heed bidi characters
-}
 
-fn allocate_glyph(
-    atlas: &mut TextureAtlas,
-    font: &ab_glyph::FontArc,
-    glyph_id: ab_glyph::GlyphId,
-    scale_in_pixels: f32,
-    y_offset: f32,
-    pixels_per_point: f32,
-) -> GlyphInfo {
-    assert!(glyph_id.0 != 0);
-    use ab_glyph::{Font as _, ScaleFont};
+    // TODO(emilk): heed bidi characters
 
-    let glyph =
-        glyph_id.with_scale_and_position(scale_in_pixels, ab_glyph::Point { x: 0.0, y: 0.0 });
-
-    let uv_rect = font.outline_glyph(glyph).map(|glyph| {
-        let bb = glyph.px_bounds();
-        let glyph_width = bb.width() as usize;
-        let glyph_height = bb.height() as usize;
-        if glyph_width == 0 || glyph_height == 0 {
-            UvRect::default()
-        } else {
-            let (glyph_pos, image) = atlas.allocate((glyph_width, glyph_height));
-            glyph.draw(|x, y, v| {
-                if v > 0.0 {
-                    let px = glyph_pos.0 + x as usize;
-                    let py = glyph_pos.1 + y as usize;
-                    image[(px, py)] = v;
-                }
-            });
-
-            let offset_in_pixels = vec2(bb.min.x, scale_in_pixels + bb.min.y);
-            let offset = offset_in_pixels / pixels_per_point + y_offset * Vec2::Y;
-            UvRect {
-                offset,
-                size: vec2(glyph_width as f32, glyph_height as f32) / pixels_per_point,
-                min: [glyph_pos.0 as u16, glyph_pos.1 as u16],
-                max: [
-                    (glyph_pos.0 + glyph_width) as u16,
-                    (glyph_pos.1 + glyph_height) as u16,
-                ],
-            }
-        }
-    });
-    let uv_rect = uv_rect.unwrap_or_default();
-
-    let advance_width_in_points =
-        font.as_scaled(scale_in_pixels).h_advance(glyph_id) / pixels_per_point;
-
-    GlyphInfo {
-        id: glyph_id,
-        advance_width: advance_width_in_points,
-        uv_rect,
-    }
+    matches!(
+        c,
+        '\u{200B}' // ZERO WIDTH SPACE
+            | '\u{200C}' // ZERO WIDTH NON-JOINER
+            | '\u{200D}' // ZERO WIDTH JOINER
+            | '\u{200E}' // LEFT-TO-RIGHT MARK
+            | '\u{200F}' // RIGHT-TO-LEFT MARK
+            | '\u{202A}' // LEFT-TO-RIGHT EMBEDDING
+            | '\u{202B}' // RIGHT-TO-LEFT EMBEDDING
+            | '\u{202C}' // POP DIRECTIONAL FORMATTING
+            | '\u{202D}' // LEFT-TO-RIGHT OVERRIDE
+            | '\u{202E}' // RIGHT-TO-LEFT OVERRIDE
+            | '\u{2060}' // WORD JOINER
+            | '\u{2061}' // FUNCTION APPLICATION
+            | '\u{2062}' // INVISIBLE TIMES
+            | '\u{2063}' // INVISIBLE SEPARATOR
+            | '\u{2064}' // INVISIBLE PLUS
+            | '\u{2066}' // LEFT-TO-RIGHT ISOLATE
+            | '\u{2067}' // RIGHT-TO-LEFT ISOLATE
+            | '\u{2068}' // FIRST STRONG ISOLATE
+            | '\u{2069}' // POP DIRECTIONAL ISOLATE
+            | '\u{206A}' // INHIBIT SYMMETRIC SWAPPING
+            | '\u{206B}' // ACTIVATE SYMMETRIC SWAPPING
+            | '\u{206C}' // INHIBIT ARABIC FORM SHAPING
+            | '\u{206D}' // ACTIVATE ARABIC FORM SHAPING
+            | '\u{206E}' // NATIONAL DIGIT SHAPES
+            | '\u{206F}' // NOMINAL DIGIT SHAPES
+            | '\u{FEFF}' // ZERO WIDTH NO-BREAK SPACE
+    )
 }

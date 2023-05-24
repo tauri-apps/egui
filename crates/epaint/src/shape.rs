@@ -233,6 +233,12 @@ impl Shape {
         Self::Mesh(mesh)
     }
 
+    /// An image at the given position.
+    ///
+    /// `uv` should normally be `Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0))`
+    /// unless you want to crop or flip the image.
+    ///
+    /// `tint` is a color multiplier. Use [`Color32::WHITE`] if you don't want to tint the image.
     pub fn image(texture_id: TextureId, rect: Rect, uv: Rect, tint: Color32) -> Self {
         let mut mesh = Mesh::with_texture(texture_id);
         mesh.add_rect_with_uv(rect, uv, tint);
@@ -316,8 +322,8 @@ impl Shape {
                 bezier_shape.points[1] += delta;
                 bezier_shape.points[2] += delta;
             }
-            Shape::CubicBezier(cubie_curve) => {
-                for p in &mut cubie_curve.points {
+            Shape::CubicBezier(cubic_curve) => {
+                for p in &mut cubic_curve.points {
                     *p += delta;
                 }
             }
@@ -619,7 +625,7 @@ pub struct TextShape {
     /// Top left corner of the first character.
     pub pos: Pos2,
 
-    /// The layed out text, from [`Fonts::layout_job`].
+    /// The laid out text, from [`Fonts::layout_job`].
     pub galley: Arc<Galley>,
 
     /// Add this underline to the whole text.
@@ -642,7 +648,7 @@ impl TextShape {
         Self {
             pos,
             galley,
-            underline: Stroke::none(),
+            underline: Stroke::NONE,
             override_text_color: None,
             angle: 0.0,
         }
@@ -762,7 +768,7 @@ pub struct ViewportInPixels {
     /// Viewport width in physical pixels.
     pub width_px: f32,
 
-    /// Viewport width in physical pixels.
+    /// Viewport height in physical pixels.
     pub height_px: f32,
 }
 
@@ -802,7 +808,7 @@ pub struct PaintCallback {
     /// `glow` backend requires that callback be an `egui_glow::CallbackFn` while the `wgpu`
     /// backend requires a `egui_wgpu::CallbackFn`.
     ///
-    /// If the type cannnot be downcast to the type expected by the current backend the callback
+    /// If the type cannot be downcast to the type expected by the current backend the callback
     /// will not be drawn.
     ///
     /// The rendering backend is responsible for first setting the active viewport to

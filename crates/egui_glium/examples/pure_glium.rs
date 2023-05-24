@@ -5,10 +5,12 @@
 use glium::glutin;
 
 fn main() {
-    let event_loop = glutin::event_loop::EventLoop::with_user_event();
+    let event_loop = glutin::event_loop::EventLoopBuilder::with_user_event().build();
     let display = create_display(&event_loop);
 
     let mut egui_glium = egui_glium::EguiGlium::new(&display, &event_loop);
+
+    let mut color_test = egui_demo_lib::ColorTest::default();
 
     event_loop.run(move |event, _, control_flow| {
         let mut redraw = || {
@@ -20,6 +22,12 @@ fn main() {
                     if ui.button("Quit").clicked() {
                         quit = true;
                     }
+                });
+
+                egui::CentralPanel::default().show(egui_ctx, |ui| {
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        color_test.ui(ui);
+                    });
                 });
             });
 
@@ -66,9 +74,11 @@ fn main() {
                     *control_flow = glutin::event_loop::ControlFlow::Exit;
                 }
 
-                egui_glium.on_event(&event);
+                let event_response = egui_glium.on_event(&event);
 
-                display.gl_window().window().request_redraw(); // TODO(emilk): ask egui if the events warrants a repaint instead
+                if event_response.repaint {
+                    display.gl_window().window().request_redraw();
+                }
             }
             glutin::event::Event::NewEvents(glutin::event::StartCause::ResumeTimeReached {
                 ..
@@ -91,7 +101,6 @@ fn create_display(event_loop: &glutin::event_loop::EventLoop<()>) -> glium::Disp
 
     let context_builder = glutin::ContextBuilder::new()
         .with_depth_buffer(0)
-        .with_srgb(true)
         .with_stencil_buffer(0)
         .with_vsync(true);
 

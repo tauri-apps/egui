@@ -3,7 +3,7 @@
 use glium::glutin;
 
 fn main() {
-    let event_loop = glutin::event_loop::EventLoop::with_user_event();
+    let event_loop = glutin::event_loop::EventLoopBuilder::with_user_event().build();
     let display = create_display(&event_loop);
 
     let mut egui_glium = egui_glium::EguiGlium::new(&display, &event_loop);
@@ -16,7 +16,9 @@ fn main() {
     // Allow us to share the texture with egui:
     let glium_texture = std::rc::Rc::new(glium_texture);
     // Allocate egui's texture id for GL texture
-    let texture_id = egui_glium.painter.register_native_texture(glium_texture);
+    let texture_id = egui_glium
+        .painter
+        .register_native_texture(glium_texture, Default::default());
     // Setup button image size for reasonable image size for button container.
     let button_image_size = egui::vec2(32_f32, 32_f32);
 
@@ -85,9 +87,11 @@ fn main() {
                     *control_flow = glutin::event_loop::ControlFlow::Exit;
                 }
 
-                egui_glium.on_event(&event);
+                let event_response = egui_glium.on_event(&event);
 
-                display.gl_window().window().request_redraw(); // TODO(emilk): ask egui if the events warrants a repaint instead
+                if event_response.repaint {
+                    display.gl_window().window().request_redraw();
+                }
             }
             glutin::event::Event::NewEvents(glutin::event::StartCause::ResumeTimeReached {
                 ..
@@ -111,7 +115,6 @@ fn create_display(event_loop: &glutin::event_loop::EventLoop<()>) -> glium::Disp
 
     let context_builder = glutin::ContextBuilder::new()
         .with_depth_buffer(0)
-        .with_srgb(true)
         .with_stencil_buffer(0)
         .with_vsync(true);
 

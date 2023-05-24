@@ -2,7 +2,7 @@ use crate::emath::NumExt;
 use crate::epaint::{Color32, RectShape, Rounding, Shape, Stroke};
 
 use super::{add_rulers_and_text, highlighted_color, Orientation, PlotConfig, RectElement};
-use crate::plot::{BoxPlot, PlotPoint, ScreenTransform};
+use crate::plot::{BoxPlot, Cursor, PlotPoint, PlotTransform};
 
 /// Contains the values of a single box in a box plot.
 #[derive(Clone, Debug, PartialEq)]
@@ -136,7 +136,7 @@ impl BoxElem {
 
     pub(super) fn add_shapes(
         &self,
-        transform: &ScreenTransform,
+        transform: &PlotTransform,
         highlighted: bool,
         shapes: &mut Vec<Shape>,
     ) {
@@ -221,13 +221,14 @@ impl BoxElem {
         parent: &BoxPlot,
         plot: &PlotConfig<'_>,
         shapes: &mut Vec<Shape>,
+        cursors: &mut Vec<Cursor>,
     ) {
         let text: Option<String> = parent
             .element_formatter
             .as_ref()
             .map(|fmt| fmt(self, parent));
 
-        add_rulers_and_text(self, plot, text, shapes);
+        add_rulers_and_text(self, plot, text, shapes, cursors);
     }
 }
 
@@ -266,11 +267,17 @@ impl RectElement for BoxElem {
         self.point_at(self.argument, self.spread.upper_whisker)
     }
 
-    fn default_values_format(&self, transform: &ScreenTransform) -> String {
+    fn default_values_format(&self, transform: &PlotTransform) -> String {
         let scale = transform.dvalue_dpos();
-        let y_decimals = ((-scale[1].abs().log10()).ceil().at_least(0.0) as usize).at_most(6);
+        let scale = match self.orientation {
+            Orientation::Horizontal => scale[0],
+            Orientation::Vertical => scale[1],
+        };
+        let y_decimals = ((-scale.abs().log10()).ceil().at_least(0.0) as usize)
+            .at_most(6)
+            .at_least(1);
         format!(
-            "\nMax = {max:.decimals$}\
+            "Max = {max:.decimals$}\
              \nQuartile 3 = {q3:.decimals$}\
              \nMedian = {med:.decimals$}\
              \nQuartile 1 = {q1:.decimals$}\

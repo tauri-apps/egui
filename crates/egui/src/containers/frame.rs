@@ -19,11 +19,16 @@ use epaint::*;
 pub struct Frame {
     /// Margin within the painted frame.
     pub inner_margin: Margin,
+
     /// Margin outside the painted frame.
     pub outer_margin: Margin,
+
     pub rounding: Rounding,
+
     pub shadow: Shadow,
+
     pub fill: Color32,
+
     pub stroke: Stroke,
 }
 
@@ -42,22 +47,18 @@ impl Frame {
         }
     }
 
-    pub(crate) fn side_top_panel(style: &Style) -> Self {
+    pub fn side_top_panel(style: &Style) -> Self {
         Self {
             inner_margin: Margin::symmetric(8.0, 2.0),
-            rounding: Rounding::none(),
-            fill: style.visuals.window_fill(),
-            stroke: style.visuals.window_stroke(),
+            fill: style.visuals.panel_fill,
             ..Default::default()
         }
     }
 
-    pub(crate) fn central_panel(style: &Style) -> Self {
+    pub fn central_panel(style: &Style) -> Self {
         Self {
             inner_margin: Margin::same(8.0),
-            rounding: Rounding::none(),
-            fill: style.visuals.window_fill(),
-            stroke: Default::default(),
+            fill: style.visuals.panel_fill,
             ..Default::default()
         }
     }
@@ -75,8 +76,8 @@ impl Frame {
 
     pub fn menu(style: &Style) -> Self {
         Self {
-            inner_margin: Margin::same(1.0),
-            rounding: style.visuals.widgets.noninteractive.rounding,
+            inner_margin: style.spacing.menu_margin,
+            rounding: style.visuals.menu_rounding,
             shadow: style.visuals.popup_shadow,
             fill: style.visuals.window_fill(),
             stroke: style.visuals.window_stroke(),
@@ -86,8 +87,8 @@ impl Frame {
 
     pub fn popup(style: &Style) -> Self {
         Self {
-            inner_margin: style.spacing.window_margin,
-            rounding: style.visuals.widgets.noninteractive.rounding,
+            inner_margin: style.spacing.menu_margin,
+            rounding: style.visuals.menu_rounding,
             shadow: style.visuals.popup_shadow,
             fill: style.visuals.window_fill(),
             stroke: style.visuals.window_stroke(),
@@ -119,38 +120,45 @@ impl Frame {
 }
 
 impl Frame {
+    #[inline]
     pub fn fill(mut self, fill: Color32) -> Self {
         self.fill = fill;
         self
     }
 
+    #[inline]
     pub fn stroke(mut self, stroke: Stroke) -> Self {
         self.stroke = stroke;
         self
     }
 
+    #[inline]
     pub fn rounding(mut self, rounding: impl Into<Rounding>) -> Self {
         self.rounding = rounding.into();
         self
     }
 
     /// Margin within the painted frame.
+    #[inline]
     pub fn inner_margin(mut self, inner_margin: impl Into<Margin>) -> Self {
         self.inner_margin = inner_margin.into();
         self
     }
 
     /// Margin outside the painted frame.
+    #[inline]
     pub fn outer_margin(mut self, outer_margin: impl Into<Margin>) -> Self {
         self.outer_margin = outer_margin.into();
         self
     }
 
     #[deprecated = "Renamed inner_margin in egui 0.18"]
+    #[inline]
     pub fn margin(self, margin: impl Into<Margin>) -> Self {
         self.inner_margin(margin)
     }
 
+    #[inline]
     pub fn shadow(mut self, shadow: Shadow) -> Self {
         self.shadow = shadow;
         self
@@ -163,6 +171,16 @@ impl Frame {
         self
     }
 }
+
+impl Frame {
+    /// inner margin plus outer margin.
+    #[inline]
+    pub fn total_margin(&self) -> Margin {
+        self.inner_margin + self.outer_margin
+    }
+}
+
+// ----------------------------------------------------------------------------
 
 pub struct Prepared {
     pub frame: Frame,
@@ -244,6 +262,13 @@ impl Prepared {
         rect
     }
 
+    fn content_with_margin(&self) -> Rect {
+        let mut rect = self.content_ui.min_rect();
+        rect.min -= self.frame.inner_margin.left_top() + self.frame.outer_margin.left_top();
+        rect.max += self.frame.inner_margin.right_bottom() + self.frame.outer_margin.right_bottom();
+        rect
+    }
+
     pub fn end(self, ui: &mut Ui) -> Response {
         let paint_rect = self.paint_rect();
 
@@ -258,6 +283,6 @@ impl Prepared {
             ui.painter().set(where_to_put_background, shape);
         }
 
-        ui.allocate_rect(paint_rect, Sense::hover())
+        ui.allocate_rect(self.content_with_margin(), Sense::hover())
     }
 }

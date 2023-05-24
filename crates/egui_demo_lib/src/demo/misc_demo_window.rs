@@ -1,6 +1,6 @@
 use super::*;
 use crate::LOREM_IPSUM;
-use egui::{color::*, epaint::text::TextWrapping, *};
+use egui::{epaint::text::TextWrapping, *};
 
 /// Showcase some ui code
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
@@ -202,7 +202,7 @@ impl Widgets {
 
         ui.horizontal_wrapped(|ui| {
             // Trick so we don't have to add spaces in the text below:
-            let width = ui.fonts().glyph_width(&TextStyle::Body.resolve(ui.style()), ' ');
+            let width = ui.fonts(|f|f.glyph_width(&TextStyle::Body.resolve(ui.style()), ' '));
             ui.spacing_mut().item_spacing.x = width;
 
             ui.label(RichText::new("Text can have").color(Color32::from_rgb(110, 255, 110)));
@@ -544,7 +544,7 @@ fn text_layout_ui(
         "mixing ",
         0.0,
         TextFormat {
-            font_id: FontId::proportional(20.0),
+            font_id: FontId::proportional(17.0),
             color: default_color,
             ..Default::default()
         },
@@ -553,7 +553,7 @@ fn text_layout_ui(
         "fonts, ",
         0.0,
         TextFormat {
-            font_id: FontId::monospace(14.0),
+            font_id: FontId::monospace(12.0),
             color: default_color,
             ..Default::default()
         },
@@ -562,7 +562,7 @@ fn text_layout_ui(
         "raised text, ",
         0.0,
         TextFormat {
-            font_id: FontId::proportional(8.0),
+            font_id: FontId::proportional(7.0),
             color: default_color,
             valign: Align::TOP,
             ..Default::default()
@@ -623,7 +623,7 @@ fn text_layout_ui(
         " mix these!",
         0.0,
         TextFormat {
-            font_id: FontId::proportional(8.0),
+            font_id: FontId::proportional(7.0),
             color: Color32::LIGHT_BLUE,
             background: Color32::from_rgb(128, 0, 0),
             underline: Stroke::new(1.0, strong_color),

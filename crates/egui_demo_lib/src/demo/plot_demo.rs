@@ -1,13 +1,131 @@
 use std::f64::consts::TAU;
 use std::ops::RangeInclusive;
 
-use egui::plot::{GridInput, GridMark};
+use egui::plot::{AxisBools, GridInput, GridMark, PlotResponse};
 use egui::*;
 use plot::{
     Arrows, Bar, BarChart, BoxElem, BoxPlot, BoxSpread, CoordinatesFormatter, Corner, HLine,
     Legend, Line, LineStyle, MarkerShape, Plot, PlotImage, PlotPoint, PlotPoints, Points, Polygon,
     Text, VLine,
 };
+
+// ----------------------------------------------------------------------------
+
+#[derive(PartialEq, Eq)]
+enum Panel {
+    Lines,
+    Markers,
+    Legend,
+    Charts,
+    Items,
+    Interaction,
+    CustomAxes,
+    LinkedAxes,
+}
+
+impl Default for Panel {
+    fn default() -> Self {
+        Self::Lines
+    }
+}
+
+// ----------------------------------------------------------------------------
+
+#[derive(PartialEq, Default)]
+pub struct PlotDemo {
+    line_demo: LineDemo,
+    marker_demo: MarkerDemo,
+    legend_demo: LegendDemo,
+    charts_demo: ChartsDemo,
+    items_demo: ItemsDemo,
+    interaction_demo: InteractionDemo,
+    custom_axes_demo: CustomAxisDemo,
+    linked_axes_demo: LinkedAxisDemo,
+    open_panel: Panel,
+}
+
+impl super::Demo for PlotDemo {
+    fn name(&self) -> &'static str {
+        "🗠 Plot"
+    }
+
+    fn show(&mut self, ctx: &Context, open: &mut bool) {
+        use super::View as _;
+        Window::new(self.name())
+            .open(open)
+            .default_size(vec2(400.0, 400.0))
+            .vscroll(false)
+            .show(ctx, |ui| self.ui(ui));
+    }
+}
+
+impl super::View for PlotDemo {
+    fn ui(&mut self, ui: &mut Ui) {
+        ui.horizontal(|ui| {
+            egui::reset_button(ui, self);
+            ui.collapsing("Instructions", |ui| {
+                ui.label("Pan by dragging, or scroll (+ shift = horizontal).");
+                ui.label("Box zooming: Right click to zoom in and zoom out using a selection.");
+                if cfg!(target_arch = "wasm32") {
+                    ui.label("Zoom with ctrl / ⌘ + pointer wheel, or with pinch gesture.");
+                } else if cfg!(target_os = "macos") {
+                    ui.label("Zoom with ctrl / ⌘ + scroll.");
+                } else {
+                    ui.label("Zoom with ctrl + scroll.");
+                }
+                ui.label("Reset view with double-click.");
+                ui.add(crate::egui_github_link_file!());
+            });
+        });
+        ui.separator();
+        ui.horizontal(|ui| {
+            ui.selectable_value(&mut self.open_panel, Panel::Lines, "Lines");
+            ui.selectable_value(&mut self.open_panel, Panel::Markers, "Markers");
+            ui.selectable_value(&mut self.open_panel, Panel::Legend, "Legend");
+            ui.selectable_value(&mut self.open_panel, Panel::Charts, "Charts");
+            ui.selectable_value(&mut self.open_panel, Panel::Items, "Items");
+            ui.selectable_value(&mut self.open_panel, Panel::Interaction, "Interaction");
+            ui.selectable_value(&mut self.open_panel, Panel::CustomAxes, "Custom Axes");
+            ui.selectable_value(&mut self.open_panel, Panel::LinkedAxes, "Linked Axes");
+        });
+        ui.separator();
+
+        match self.open_panel {
+            Panel::Lines => {
+                self.line_demo.ui(ui);
+            }
+            Panel::Markers => {
+                self.marker_demo.ui(ui);
+            }
+            Panel::Legend => {
+                self.legend_demo.ui(ui);
+            }
+            Panel::Charts => {
+                self.charts_demo.ui(ui);
+            }
+            Panel::Items => {
+                self.items_demo.ui(ui);
+            }
+            Panel::Interaction => {
+                self.interaction_demo.ui(ui);
+            }
+            Panel::CustomAxes => {
+                self.custom_axes_demo.ui(ui);
+            }
+            Panel::LinkedAxes => {
+                self.linked_axes_demo.ui(ui);
+            }
+        }
+    }
+}
+
+fn is_approx_zero(val: f64) -> bool {
+    val.abs() < 1e-6
+}
+
+fn is_approx_integer(val: f64) -> bool {
+    val.fract().abs() < 1e-6
+}
 
 // ----------------------------------------------------------------------------
 
@@ -152,7 +270,7 @@ impl LineDemo {
         self.options_ui(ui);
         if self.animate {
             ui.ctx().request_repaint();
-            self.time += ui.input().unstable_dt.at_most(1.0 / 30.0) as f64;
+            self.time += ui.input(|i| i.unstable_dt).at_most(1.0 / 30.0) as f64;
         };
         let mut plot = Plot::new("lines_demo").legend(Legend::default());
         if self.square {
@@ -458,17 +576,21 @@ impl CustomAxisDemo {
 struct LinkedAxisDemo {
     link_x: bool,
     link_y: bool,
-    group: plot::LinkedAxisGroup,
+    link_cursor_x: bool,
+    link_cursor_y: bool,
 }
 
 impl Default for LinkedAxisDemo {
     fn default() -> Self {
         let link_x = true;
         let link_y = false;
+        let link_cursor_x = true;
+        let link_cursor_y = false;
         Self {
             link_x,
             link_y,
-            group: plot::LinkedAxisGroup::new(link_x, link_y),
+            link_cursor_x,
+            link_cursor_y,
         }
     }
 }
@@ -512,27 +634,35 @@ impl LinkedAxisDemo {
             ui.checkbox(&mut self.link_x, "X");
             ui.checkbox(&mut self.link_y, "Y");
         });
-        self.group.set_link_x(self.link_x);
-        self.group.set_link_y(self.link_y);
+        ui.horizontal(|ui| {
+            ui.label("Linked cursors:");
+            ui.checkbox(&mut self.link_cursor_x, "X");
+            ui.checkbox(&mut self.link_cursor_y, "Y");
+        });
+
+        let link_group_id = ui.id().with("linked_demo");
         ui.horizontal(|ui| {
             Plot::new("linked_axis_1")
                 .data_aspect(1.0)
                 .width(250.0)
                 .height(250.0)
-                .link_axis(self.group.clone())
+                .link_axis(link_group_id, self.link_x, self.link_y)
+                .link_cursor(link_group_id, self.link_cursor_x, self.link_cursor_y)
                 .show(ui, LinkedAxisDemo::configure_plot);
             Plot::new("linked_axis_2")
                 .data_aspect(2.0)
                 .width(150.0)
                 .height(250.0)
-                .link_axis(self.group.clone())
+                .link_axis(link_group_id, self.link_x, self.link_y)
+                .link_cursor(link_group_id, self.link_cursor_x, self.link_cursor_y)
                 .show(ui, LinkedAxisDemo::configure_plot);
         });
         Plot::new("linked_axis_3")
             .data_aspect(0.5)
             .width(250.0)
             .height(150.0)
-            .link_axis(self.group.clone())
+            .link_axis(link_group_id, self.link_x, self.link_y)
+            .link_cursor(link_group_id, self.link_cursor_x, self.link_cursor_y)
             .show(ui, LinkedAxisDemo::configure_plot)
             .response
     }
@@ -578,11 +708,8 @@ impl ItemsDemo {
         };
 
         let texture: &egui::TextureHandle = self.texture.get_or_insert_with(|| {
-            ui.ctx().load_texture(
-                "plot_demo",
-                egui::ColorImage::example(),
-                egui::TextureFilter::Linear,
-            )
+            ui.ctx()
+                .load_texture("plot_demo", egui::ColorImage::example(), Default::default())
         });
         let image = PlotImage::new(
             texture,
@@ -624,9 +751,10 @@ impl InteractionDemo {
     fn ui(&mut self, ui: &mut Ui) -> Response {
         let plot = Plot::new("interaction_demo").height(300.0);
 
-        let InnerResponse {
+        let PlotResponse {
             response,
             inner: (screen_pos, pointer_coordinate, pointer_coordinate_drag_delta, bounds, hovered),
+            ..
         } = plot.show(ui, |plot_ui| {
             (
                 plot_ui.screen_from_plot(PlotPoint::new(0.0, 0.0)),
@@ -685,6 +813,8 @@ impl Default for Chart {
 struct ChartsDemo {
     chart: Chart,
     vertical: bool,
+    allow_zoom: AxisBools,
+    allow_drag: AxisBools,
 }
 
 impl Default for ChartsDemo {
@@ -692,22 +822,44 @@ impl Default for ChartsDemo {
         Self {
             vertical: true,
             chart: Chart::default(),
+            allow_zoom: true.into(),
+            allow_drag: true.into(),
         }
     }
 }
 
 impl ChartsDemo {
     fn ui(&mut self, ui: &mut Ui) -> Response {
-        ui.label("Type:");
         ui.horizontal(|ui| {
-            ui.selectable_value(&mut self.chart, Chart::GaussBars, "Histogram");
-            ui.selectable_value(&mut self.chart, Chart::StackedBars, "Stacked Bar Chart");
-            ui.selectable_value(&mut self.chart, Chart::BoxPlot, "Box Plot");
-        });
-        ui.label("Orientation:");
-        ui.horizontal(|ui| {
-            ui.selectable_value(&mut self.vertical, true, "Vertical");
-            ui.selectable_value(&mut self.vertical, false, "Horizontal");
+            ui.vertical(|ui| {
+                ui.label("Type:");
+                ui.horizontal(|ui| {
+                    ui.selectable_value(&mut self.chart, Chart::GaussBars, "Histogram");
+                    ui.selectable_value(&mut self.chart, Chart::StackedBars, "Stacked Bar Chart");
+                    ui.selectable_value(&mut self.chart, Chart::BoxPlot, "Box Plot");
+                });
+                ui.label("Orientation:");
+                ui.horizontal(|ui| {
+                    ui.selectable_value(&mut self.vertical, true, "Vertical");
+                    ui.selectable_value(&mut self.vertical, false, "Horizontal");
+                });
+            });
+            ui.vertical(|ui| {
+                ui.group(|ui| {
+                    ui.add_enabled_ui(self.chart != Chart::StackedBars, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label("Allow zoom:");
+                            ui.checkbox(&mut self.allow_zoom.x, "X");
+                            ui.checkbox(&mut self.allow_zoom.y, "Y");
+                        });
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Allow drag:");
+                        ui.checkbox(&mut self.allow_drag.x, "X");
+                        ui.checkbox(&mut self.allow_drag.y, "Y");
+                    });
+                });
+            });
         });
         match self.chart {
             Chart::GaussBars => self.bar_gauss(ui),
@@ -739,7 +891,9 @@ impl ChartsDemo {
 
         Plot::new("Normal Distribution Demo")
             .legend(Legend::default())
-            .data_aspect(1.0)
+            .clamp_grid(true)
+            .allow_zoom(self.allow_zoom)
+            .allow_drag(self.allow_drag)
             .show(ui, |plot_ui| plot_ui.bar_chart(chart))
             .response
     }
@@ -798,6 +952,7 @@ impl ChartsDemo {
         Plot::new("Stacked Bar Chart Demo")
             .legend(Legend::default())
             .data_aspect(1.0)
+            .allow_drag(self.allow_drag)
             .show(ui, |plot_ui| {
                 plot_ui.bar_chart(chart1);
                 plot_ui.bar_chart(chart2);
@@ -841,6 +996,8 @@ impl ChartsDemo {
 
         Plot::new("Box Plot Demo")
             .legend(Legend::default())
+            .allow_zoom(self.allow_zoom)
+            .allow_drag(self.allow_drag)
             .show(ui, |plot_ui| {
                 plot_ui.box_plot(box1);
                 plot_ui.box_plot(box2);
@@ -848,122 +1005,4 @@ impl ChartsDemo {
             })
             .response
     }
-}
-
-// ----------------------------------------------------------------------------
-
-#[derive(PartialEq, Eq)]
-enum Panel {
-    Lines,
-    Markers,
-    Legend,
-    Charts,
-    Items,
-    Interaction,
-    CustomAxes,
-    LinkedAxes,
-}
-
-impl Default for Panel {
-    fn default() -> Self {
-        Self::Lines
-    }
-}
-
-// ----------------------------------------------------------------------------
-
-#[derive(PartialEq, Default)]
-pub struct PlotDemo {
-    line_demo: LineDemo,
-    marker_demo: MarkerDemo,
-    legend_demo: LegendDemo,
-    charts_demo: ChartsDemo,
-    items_demo: ItemsDemo,
-    interaction_demo: InteractionDemo,
-    custom_axes_demo: CustomAxisDemo,
-    linked_axes_demo: LinkedAxisDemo,
-    open_panel: Panel,
-}
-
-impl super::Demo for PlotDemo {
-    fn name(&self) -> &'static str {
-        "🗠 Plot"
-    }
-
-    fn show(&mut self, ctx: &Context, open: &mut bool) {
-        use super::View as _;
-        Window::new(self.name())
-            .open(open)
-            .default_size(vec2(400.0, 400.0))
-            .vscroll(false)
-            .show(ctx, |ui| self.ui(ui));
-    }
-}
-
-impl super::View for PlotDemo {
-    fn ui(&mut self, ui: &mut Ui) {
-        ui.horizontal(|ui| {
-            egui::reset_button(ui, self);
-            ui.collapsing("Instructions", |ui| {
-                ui.label("Pan by dragging, or scroll (+ shift = horizontal).");
-                ui.label("Box zooming: Right click to zoom in and zoom out using a selection.");
-                if cfg!(target_arch = "wasm32") {
-                    ui.label("Zoom with ctrl / ⌘ + pointer wheel, or with pinch gesture.");
-                } else if cfg!(target_os = "macos") {
-                    ui.label("Zoom with ctrl / ⌘ + scroll.");
-                } else {
-                    ui.label("Zoom with ctrl + scroll.");
-                }
-                ui.label("Reset view with double-click.");
-                ui.add(crate::egui_github_link_file!());
-            });
-        });
-        ui.separator();
-        ui.horizontal(|ui| {
-            ui.selectable_value(&mut self.open_panel, Panel::Lines, "Lines");
-            ui.selectable_value(&mut self.open_panel, Panel::Markers, "Markers");
-            ui.selectable_value(&mut self.open_panel, Panel::Legend, "Legend");
-            ui.selectable_value(&mut self.open_panel, Panel::Charts, "Charts");
-            ui.selectable_value(&mut self.open_panel, Panel::Items, "Items");
-            ui.selectable_value(&mut self.open_panel, Panel::Interaction, "Interaction");
-            ui.selectable_value(&mut self.open_panel, Panel::CustomAxes, "Custom Axes");
-            ui.selectable_value(&mut self.open_panel, Panel::LinkedAxes, "Linked Axes");
-        });
-        ui.separator();
-
-        match self.open_panel {
-            Panel::Lines => {
-                self.line_demo.ui(ui);
-            }
-            Panel::Markers => {
-                self.marker_demo.ui(ui);
-            }
-            Panel::Legend => {
-                self.legend_demo.ui(ui);
-            }
-            Panel::Charts => {
-                self.charts_demo.ui(ui);
-            }
-            Panel::Items => {
-                self.items_demo.ui(ui);
-            }
-            Panel::Interaction => {
-                self.interaction_demo.ui(ui);
-            }
-            Panel::CustomAxes => {
-                self.custom_axes_demo.ui(ui);
-            }
-            Panel::LinkedAxes => {
-                self.linked_axes_demo.ui(ui);
-            }
-        }
-    }
-}
-
-fn is_approx_zero(val: f64) -> bool {
-    val.abs() < 1e-6
-}
-
-fn is_approx_integer(val: f64) -> bool {
-    val.fract().abs() < 1e-6
 }

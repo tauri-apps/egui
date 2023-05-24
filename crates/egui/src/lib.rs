@@ -3,7 +3,7 @@
 //! Try the live web demo: <https://www.egui.rs/#demo>. Read more about egui at <https://github.com/emilk/egui>.
 //!
 //! `egui` is in heavy development, with each new version having breaking changes.
-//! You need to have rust 1.61.0 or later to use `egui`.
+//! You need to have rust 1.62.0 or later to use `egui`.
 //!
 //! To quickly get started with egui, you can take a look at [`eframe_template`](https://github.com/emilk/eframe_template)
 //! which uses [`eframe`](https://docs.rs/eframe).
@@ -112,7 +112,7 @@
 //! ``` no_run
 //! # fn handle_platform_output(_: egui::PlatformOutput) {}
 //! # fn gather_input() -> egui::RawInput { egui::RawInput::default() }
-//! # fn paint(textures_detla: egui::TexturesDelta, _: Vec<egui::ClippedPrimitive>) {}
+//! # fn paint(textures_delta: egui::TexturesDelta, _: Vec<egui::ClippedPrimitive>) {}
 //! let mut ctx = egui::Context::default();
 //!
 //! // Game loop:
@@ -298,6 +298,7 @@
 
 #![allow(clippy::float_cmp)]
 #![allow(clippy::manual_range_contains)]
+#![forbid(unsafe_code)]
 
 mod animation_manager;
 pub mod containers;
@@ -305,6 +306,7 @@ mod context;
 mod data;
 mod frame_state;
 pub(crate) mod grid;
+pub mod gui_zoom;
 mod id;
 mod input_state;
 pub mod introspection;
@@ -312,6 +314,7 @@ pub mod layers;
 mod layout;
 mod memory;
 pub mod menu;
+pub mod os;
 mod painter;
 pub(crate) mod placer;
 mod response;
@@ -322,18 +325,23 @@ pub mod util;
 pub mod widget_text;
 pub mod widgets;
 
+#[cfg(feature = "accesskit")]
+pub use accesskit;
+
 pub use epaint;
+pub use epaint::ecolor;
 pub use epaint::emath;
 
-pub use emath::{lerp, pos2, remap, remap_clamp, vec2, Align, Align2, NumExt, Pos2, Rect, Vec2};
 #[cfg(feature = "color-hex")]
-pub use epaint::hex_color;
+pub use ecolor::hex_color;
+pub use ecolor::{Color32, Rgba};
+pub use emath::{lerp, pos2, remap, remap_clamp, vec2, Align, Align2, NumExt, Pos2, Rect, Vec2};
 pub use epaint::{
-    color, mutex,
+    mutex,
     text::{FontData, FontDefinitions, FontFamily, FontId, FontTweak},
-    textures::{TextureFilter, TexturesDelta},
-    ClippedPrimitive, Color32, ColorImage, FontImage, ImageData, Mesh, PaintCallback,
-    PaintCallbackInfo, Rgba, Rounding, Shape, Stroke, TextureHandle, TextureId,
+    textures::{TextureFilter, TextureOptions, TexturesDelta},
+    ClippedPrimitive, ColorImage, FontImage, ImageData, Mesh, PaintCallback, PaintCallbackInfo,
+    Rounding, Shape, Stroke, TextureHandle, TextureId,
 };
 
 pub mod text {
@@ -346,21 +354,21 @@ pub mod text {
 
 pub use {
     containers::*,
-    context::Context,
+    context::{Context, RequestRepaintInfo},
     data::{
         input::*,
-        output::{self, CursorIcon, FullOutput, PlatformOutput, WidgetInfo},
+        output::{self, CursorIcon, FullOutput, PlatformOutput, UserAttentionType, WidgetInfo},
     },
     grid::Grid,
     id::{Id, IdMap},
     input_state::{InputState, MultiTouchInfo, PointerState},
     layers::{LayerId, Order},
     layout::*,
-    memory::Memory,
+    memory::{Memory, Options},
     painter::Painter,
     response::{InnerResponse, Response},
     sense::Sense,
-    style::{FontSelection, Style, TextStyle, Visuals},
+    style::{FontSelection, Margin, Style, TextStyle, Visuals},
     text::{Galley, TextFormat},
     ui::Ui,
     widget_text::{RichText, WidgetText},
@@ -373,7 +381,7 @@ pub use {
 pub fn warn_if_debug_build(ui: &mut crate::Ui) {
     if cfg!(debug_assertions) {
         ui.label(
-            RichText::new("‼ Debug build ‼")
+            RichText::new("⚠ Debug build ⚠")
                 .small()
                 .color(ui.visuals().warn_fg_color),
         )
@@ -502,22 +510,34 @@ pub mod special_emojis {
 }
 
 /// The different types of built-in widgets in egui
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub enum WidgetType {
     Label, // TODO(emilk): emit Label events
+
     /// e.g. a hyperlink
     Link,
+
     TextEdit,
+
     Button,
+
     Checkbox,
+
     RadioButton,
+
     SelectableLabel,
+
     ComboBox,
+
     Slider,
+
     DragValue,
+
     ColorButton,
+
     ImageButton,
+
     CollapsingHeader,
 
     /// If you cannot fit any of the above slots.
@@ -546,4 +566,9 @@ pub fn __run_test_ui(mut add_contents: impl FnMut(&mut Ui)) {
             add_contents(ui);
         });
     });
+}
+
+#[cfg(feature = "accesskit")]
+pub fn accesskit_root_id() -> Id {
+    Id::new("accesskit_root")
 }

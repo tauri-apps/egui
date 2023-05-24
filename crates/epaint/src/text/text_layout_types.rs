@@ -238,8 +238,8 @@ impl Default for TextFormat {
             color: Color32::GRAY,
             background: Color32::TRANSPARENT,
             italics: false,
-            underline: Stroke::none(),
-            strikethrough: Stroke::none(),
+            underline: Stroke::NONE,
+            strikethrough: Stroke::NONE,
             valign: Align::BOTTOM,
         }
     }
@@ -306,7 +306,7 @@ impl Default for TextWrapping {
 
 // ----------------------------------------------------------------------------
 
-/// Text that has been layed out, ready for painting.
+/// Text that has been laid out, ready for painting.
 ///
 /// You can create a [`Galley`] using [`crate::Fonts::layout_job`];
 ///
@@ -374,7 +374,7 @@ pub struct Row {
 }
 
 /// The tessellated output of a row.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct RowVisuals {
     /// The tessellated text, using non-normalized (texel) UV coordinates.
@@ -406,9 +406,12 @@ pub struct Glyph {
     /// The character this glyph represents.
     pub chr: char,
 
-    /// Relative to the galley position.
+    /// Baseline position, relative to the galley.
     /// Logical position: pos.y is the same for all chars of the same [`TextFormat`].
     pub pos: Pos2,
+
+    /// `ascent` value from the font
+    pub ascent: f32,
 
     /// Advance width and font row height.
     pub size: Vec2,
@@ -428,7 +431,7 @@ impl Glyph {
     /// Same y range for all characters with the same [`TextFormat`].
     #[inline]
     pub fn logical_rect(&self) -> Rect {
-        Rect::from_min_size(self.pos, self.size)
+        Rect::from_min_size(self.pos - vec2(0.0, self.ascent), self.size)
     }
 }
 
@@ -847,7 +850,7 @@ impl Galley {
                 // keep same X coord
                 let x = self.pos_from_cursor(cursor).center().x;
                 let column = if x > self.rows[new_row].rect.right() {
-                    // beyond the end of this row - keep same colum
+                    // beyond the end of this row - keep same column
                     cursor.rcursor.column
                 } else {
                     self.rows[new_row].char_at(x)

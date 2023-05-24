@@ -11,9 +11,9 @@
 
 #![allow(clippy::float_cmp)]
 #![allow(clippy::manual_range_contains)]
+#![forbid(unsafe_code)]
 
 mod bezier;
-pub mod color;
 pub mod image;
 mod mesh;
 pub mod mutex;
@@ -31,7 +31,6 @@ pub mod util;
 
 pub use {
     bezier::{CubicBezierShape, QuadraticBezierShape},
-    color::{Color32, Rgba},
     image::{ColorImage, FontImage, ImageData, ImageDelta},
     mesh::{Mesh, Mesh16, Vertex},
     shadow::Shadow,
@@ -48,13 +47,15 @@ pub use {
     textures::TextureManager,
 };
 
+pub use ecolor::{Color32, Hsva, HsvaGamma, Rgba};
 pub use emath::{pos2, vec2, Pos2, Rect, Vec2};
 
 pub use ahash;
+pub use ecolor;
 pub use emath;
 
 #[cfg(feature = "color-hex")]
-pub use color_hex;
+pub use ecolor::hex_color;
 
 /// The UV coordinate of a white region of the texture mesh.
 /// The default egui texture has the top-left corner pixel fully white.
@@ -64,13 +65,13 @@ pub const WHITE_UV: emath::Pos2 = emath::pos2(0.0, 0.0);
 
 /// What texture to use in a [`Mesh`] mesh.
 ///
-/// If you don't want to use a texture, use `TextureId::Epaint(0)` and the [`WHITE_UV`] for uv-coord.
+/// If you don't want to use a texture, use `TextureId::Managed(0)` and the [`WHITE_UV`] for uv-coord.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub enum TextureId {
     /// Textures allocated using [`TextureManager`].
     ///
-    /// The first texture (`TextureId::Epaint(0)`) is used for the font data.
+    /// The first texture (`TextureId::Managed(0)`) is used for the font data.
     Managed(u64),
 
     /// Your own texture, defined in any which way you want.
