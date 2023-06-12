@@ -111,7 +111,7 @@ pub fn window_builder<E>(
         .with_focused(*active)
         // Keep hidden until we've painted something. See https://github.com/emilk/egui/pull/2279
         // We must also keep the window hidden until AccessKit is initialized.
-        .with_visible(false);
+        .with_visible(true);
 
     #[cfg(target_os = "linux")]
     {
