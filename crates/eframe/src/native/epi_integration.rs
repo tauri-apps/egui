@@ -629,5 +629,6 @@ pub(crate) fn theme_from_winit_theme(theme: winit::window::Theme) -> Theme {
     match theme {
         winit::window::Theme::Dark => Theme::Dark,
         winit::window::Theme::Light => Theme::Light,
+        _ => unreachable!(),
     }
 }

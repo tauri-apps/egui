@@ -97,21 +97,15 @@ trait WinitApp {
 ///
 /// We reuse the event-loop so we can support closing and opening an eframe window
 /// multiple times. This is just a limitation of winit.
-fn with_event_loop<R>(
-    mut native_options: epi::NativeOptions,
-    f: impl FnOnce(&mut EventLoop<UserEvent>, NativeOptions) -> R,
-) -> R {
+fn with_event_loop<R>(f: impl FnOnce(&mut EventLoop<UserEvent>) -> R) -> R {
     use std::cell::RefCell;
     thread_local!(static EVENT_LOOP: RefCell<Option<EventLoop<UserEvent>>> = RefCell::new(None));
 
     EVENT_LOOP.with(|event_loop| {
-        // Since we want to reference NativeOptions when creating the EventLoop we can't
-        // do that as part of the lazy thread local storage initialization and so we instead
-        // create the event loop lazily here
         let mut event_loop = event_loop.borrow_mut();
-        let event_loop = event_loop
-            .get_or_insert_with(|| create_event_loop_builder(&mut native_options).build());
-        f(event_loop, native_options)
+        let event_loop =
+            event_loop.get_or_insert_with(|| winit::event_loop::EventLoop::with_user_event());
+        f(event_loop)
     })
 }
 
@@ -237,7 +231,7 @@ fn run_and_return(
     // On Windows this clears out events so that we can later create another window.
     // See https://github.com/emilk/egui/pull/1889 for details.
     event_loop.run_return(|_, _, control_flow| {
-        control_flow.set_exit();
+        *control_flow = ControlFlow::Exit;
     });
 
     returned_result
@@ -442,7 +436,7 @@ mod glow_integration {
             // create gl display. this may probably create a window too on most platforms. definitely on `MS windows`. never on android.
             let (window, gl_config) = glutin_winit::DisplayBuilder::new()
                 // we might want to expose this option to users in the future. maybe using an env var or using native_options.
-                .with_preference(glutin_winit::ApiPrefence::FallbackEgl) // https://github.com/emilk/egui/issues/2520#issuecomment-1367841150
+                // .with_preference(glutin_winit::ApiPrefence::FallbackEgl) // https://github.com/emilk/egui/issues/2520#issuecomment-1367841150
                 .with_window_builder(Some(winit_window_builder.clone()))
                 .build(
                     event_loop,
@@ -712,16 +706,16 @@ mod glow_integration {
                 #[cfg(feature = "wgpu")]
                 None,
             );
-            #[cfg(feature = "accesskit")]
-            {
-                integration.init_accesskit(gl_window.window(), self.repaint_proxy.lock().clone());
-            }
+            // #[cfg(feature = "accesskit")]
+            // {
+            //     integration.init_accesskit(gl_window.window(), self.repaint_proxy.lock().clone());
+            // }
             let theme = system_theme.unwrap_or(self.native_options.default_theme);
             integration.egui_ctx.set_visuals(theme.egui_visuals());
 
-            gl_window.window().set_ime_allowed(true);
+            // gl_window.window().set_ime_allowed(true);
             if self.native_options.mouse_passthrough {
-                gl_window.window().set_cursor_hittest(false).unwrap();
+                gl_window.window().set_ignore_cursor_events(true).unwrap();
             }
 
             {
@@ -922,7 +916,8 @@ mod glow_integration {
             event: &winit::event::Event<'_, UserEvent>,
         ) -> Result<EventResult> {
             Ok(match event {
-                winit::event::Event::Resumed => {
+                winit::event::Event::Resumed
+                | winit::event::Event::NewEvents(winit::event::StartCause::Init) => {
                     // first resume event.
                     // we can actually move this outside of event loop.
                     // and just run the on_resume fn of gl_window
@@ -1035,13 +1030,13 @@ mod glow_integration {
         app_creator: epi::AppCreator,
     ) -> Result<()> {
         if native_options.run_and_return {
-            with_event_loop(native_options, |event_loop, native_options| {
+            with_event_loop(|event_loop| {
                 let glow_eframe =
                     GlowWinitApp::new(event_loop, app_name, native_options, app_creator);
                 run_and_return(event_loop, glow_eframe)
             })
         } else {
-            let event_loop = create_event_loop_builder(&mut native_options).build();
+            let event_loop = winit::event_loop::EventLoop::with_user_event();
             let glow_eframe = GlowWinitApp::new(&event_loop, app_name, native_options, app_creator);
             run_and_exit(event_loop, glow_eframe);
         }
@@ -1173,14 +1168,14 @@ mod wgpu_integration {
                 None,
                 wgpu_render_state.clone(),
             );
-            #[cfg(feature = "accesskit")]
-            {
-                integration.init_accesskit(&window, self.repaint_proxy.lock().unwrap().clone());
-            }
+            // #[cfg(feature = "accesskit")]
+            // {
+            //     integration.init_accesskit(&window, self.repaint_proxy.lock().unwrap().clone());
+            // }
             let theme = system_theme.unwrap_or(self.native_options.default_theme);
             integration.egui_ctx.set_visuals(theme.egui_visuals());
 
-            window.set_ime_allowed(true);
+            // window.set_ime_allowed(true);
 
             {
                 let event_loop_proxy = self.repaint_proxy.clone();
@@ -1341,7 +1336,8 @@ mod wgpu_integration {
             event: &winit::event::Event<'_, UserEvent>,
         ) -> Result<EventResult> {
             Ok(match event {
-                winit::event::Event::Resumed => {
+                winit::event::Event::Resumed
+                | winit::event::Event::NewEvents(winit::event::StartCause::Init) => {
                     if let Some(running) = &self.running {
                         if self.window.is_none() {
                             let window = Self::create_window(
@@ -1490,9 +1486,7 @@ pub use wgpu_integration::run_wgpu;
 
 fn system_theme(window: &winit::window::Window, options: &NativeOptions) -> Option<crate::Theme> {
     if options.follow_system_theme {
-        window
-            .theme()
-            .map(super::epi_integration::theme_from_winit_theme)
+        Some(window.theme()).map(super::epi_integration::theme_from_winit_theme)
     } else {
         None
     }
