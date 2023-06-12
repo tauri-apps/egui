@@ -3,9 +3,7 @@
 
 use std::time::Instant;
 
-use winit::event_loop::{
-    ControlFlow, EventLoop, EventLoopBuilder, EventLoopProxy, EventLoopWindowTarget,
-};
+use winit::event_loop::{ControlFlow, EventLoop, EventLoopProxy, EventLoopWindowTarget};
 
 #[cfg(feature = "accesskit")]
 use egui_winit::accesskit_winit;
@@ -83,17 +81,17 @@ trait WinitApp {
     ) -> Result<EventResult>;
 }
 
-fn create_event_loop_builder(
-    native_options: &mut epi::NativeOptions,
-) -> EventLoopBuilder<UserEvent> {
-    let mut event_loop_builder = winit::event_loop::EventLoopBuilder::with_user_event();
+// fn create_event_loop_builder(
+//     native_options: &mut epi::NativeOptions,
+// ) -> EventLoopBuilder<UserEvent> {
+//     let mut event_loop_builder = winit::event_loop::EventLoopBuilder::with_user_event();
 
-    if let Some(hook) = std::mem::take(&mut native_options.event_loop_builder) {
-        hook(&mut event_loop_builder);
-    }
+//     if let Some(hook) = std::mem::take(&mut native_options.event_loop_builder) {
+//         hook(&mut event_loop_builder);
+//     }
 
-    event_loop_builder
-}
+//     event_loop_builder
+// }
 
 /// Access a thread-local event loop.
 ///

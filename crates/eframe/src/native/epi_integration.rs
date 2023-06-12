@@ -3,6 +3,9 @@ use winit::event_loop::EventLoopWindowTarget;
 #[cfg(target_os = "macos")]
 use winit::platform::macos::WindowBuilderExtMacOS as _;
 
+#[cfg(target_os = "linux")]
+use winit::platform::unix::WindowBuilderExtUnix;
+
 #[cfg(feature = "accesskit")]
 use egui::accesskit;
 use egui::NumExt as _;
@@ -61,7 +64,7 @@ pub fn read_window_info(
         fullscreen: window.fullscreen().is_some(),
         minimized: window_state.minimized,
         maximized: window_state.maximized,
-        focused: window.has_focus(),
+        focused: window.is_focused(),
         size: egui::Vec2 {
             x: size.width,
             y: size.height,
@@ -105,11 +108,18 @@ pub fn window_builder<E>(
         .with_resizable(*resizable)
         .with_transparent(*transparent)
         .with_window_icon(window_icon)
-        .with_active(*active)
+        .with_focused(*active)
         // Keep hidden until we've painted something. See https://github.com/emilk/egui/pull/2279
         // We must also keep the window hidden until AccessKit is initialized.
         .with_visible(false);
 
+    #[cfg(target_os = "linux")]
+    {
+        window_builder = window_builder.with_rgba_visual(true);
+        window_builder = window_builder.with_app_paintable(true);
+        window_builder = window_builder.with_double_buffered(true);
+        window_builder = window_builder.with_transparent_draw(!*transparent);
+    }
     #[cfg(target_os = "macos")]
     if *fullsize_content {
         window_builder = window_builder
@@ -175,12 +185,11 @@ pub fn apply_native_options_to_window(
     window: &winit::window::Window,
     native_options: &crate::NativeOptions,
 ) {
-    use winit::window::WindowLevel;
-    window.set_window_level(if native_options.always_on_top {
-        WindowLevel::AlwaysOnTop
+    if native_options.always_on_top {
+        window.set_always_on_top(true)
     } else {
-        WindowLevel::Normal
-    });
+        window.set_always_on_top(false)
+    };
 }
 
 fn largest_monitor_point_size<E>(event_loop: &EventLoopWindowTarget<E>) -> egui::Vec2 {
@@ -278,12 +287,11 @@ pub fn handle_app_output(
     }
 
     if let Some(always_on_top) = always_on_top {
-        use winit::window::WindowLevel;
-        window.set_window_level(if always_on_top {
-            WindowLevel::AlwaysOnTop
+        if always_on_top {
+            window.set_always_on_top(true);
         } else {
-            WindowLevel::Normal
-        });
+            window.set_always_on_top(false);
+        };
     }
 
     if let Some(minimized) = minimized {
@@ -296,9 +304,9 @@ pub fn handle_app_output(
         window_state.maximized = maximized;
     }
 
-    if !window.has_focus() {
+    if !window.is_focused() {
         if focus == Some(true) {
-            window.focus_window();
+            window.set_focus();
         } else if let Some(attention) = attention {
             use winit::window::UserAttentionType;
             window.request_user_attention(match attention {
@@ -359,7 +367,7 @@ impl EpiIntegration {
         let native_pixels_per_point = window.scale_factor() as f32;
 
         let window_state = WindowState {
-            minimized: window.is_minimized().unwrap_or(false),
+            minimized: window.is_minimized(),
             maximized: window.is_maximized(),
         };
 
@@ -405,24 +413,24 @@ impl EpiIntegration {
         }
     }
 
-    #[cfg(feature = "accesskit")]
-    pub fn init_accesskit<E: From<accesskit_winit::ActionRequestEvent> + Send>(
-        &mut self,
-        window: &winit::window::Window,
-        event_loop_proxy: winit::event_loop::EventLoopProxy<E>,
-    ) {
-        let egui_ctx = self.egui_ctx.clone();
-        self.egui_winit
-            .init_accesskit(window, event_loop_proxy, move || {
-                // This function is called when an accessibility client
-                // (e.g. screen reader) makes its first request. If we got here,
-                // we know that an accessibility tree is actually wanted.
-                egui_ctx.enable_accesskit();
-                // Enqueue a repaint so we'll receive a full tree update soon.
-                egui_ctx.request_repaint();
-                egui_ctx.accesskit_placeholder_tree_update()
-            });
-    }
+    // #[cfg(feature = "accesskit")]
+    // pub fn init_accesskit<E: From<accesskit_winit::ActionRequestEvent> + Send>(
+    //     &mut self,
+    //     window: &winit::window::Window,
+    //     event_loop_proxy: winit::event_loop::EventLoopProxy<E>,
+    // ) {
+    //     let egui_ctx = self.egui_ctx.clone();
+    //     self.egui_winit
+    //         .init_accesskit(window, event_loop_proxy, move || {
+    //             // This function is called when an accessibility client
+    //             // (e.g. screen reader) makes its first request. If we got here,
+    //             // we know that an accessibility tree is actually wanted.
+    //             egui_ctx.enable_accesskit();
+    //             // Enqueue a repaint so we'll receive a full tree update soon.
+    //             egui_ctx.request_repaint();
+    //             egui_ctx.accesskit_placeholder_tree_update()
+    //         });
+    // }
 
     pub fn warm_up(&mut self, app: &mut dyn epi::App, window: &winit::window::Window) {
         crate::profile_function!();
