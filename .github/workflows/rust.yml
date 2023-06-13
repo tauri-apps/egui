@@ -11,230 +11,110 @@ env:
   RUSTDOCFLAGS: -D warnings
 
 jobs:
-  fmt-crank-check-test:
-    name: Format + check + test
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v2
-
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: default
-          toolchain: 1.65.0
-          override: true
-
-      - name: Install packages (Linux)
-        if: runner.os == 'Linux'
-        #uses: awalsh128/cache-apt-pkgs-action@v1.2.2
-        #TODO(emilk) use upstream when https://github.com/awalsh128/cache-apt-pkgs-action/pull/90 is merged
-        uses: rerun-io/cache-apt-pkgs-action@59534850182063abf1b2c11bb3686722a12a8397
-        with:
-          packages: libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libssl-dev libgtk-3-dev # libgtk-3-dev is used by rfd
-          version: 1.0
-          execute_install_scripts: true
-
-      - name: Set up cargo cache
-        uses: Swatinem/rust-cache@v2
-
-      - name: Rustfmt
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
-
-      - name: Install cargo-cranky
-        uses: baptiste0928/cargo-install@v1
-        with:
-          crate: cargo-cranky
-
-      - name: check --all-features
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
-          args: --locked --all-features --all-targets
-
-      - name: check egui_extras --all-features
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
-          args: --locked --all-features --all-targets -p egui_extras
-
-      - name: check default features
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
-          args: --locked --all-targets
-
-      - name: check --no-default-features
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
-          args: --locked --no-default-features --lib --all-targets
-
-      - name: check epaint --no-default-features
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
-          args: --locked --no-default-features --lib --all-targets -p epaint
-
-      - name: check eframe --no-default-features
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
-          args: --locked --no-default-features --lib --all-targets -p eframe
-
-      - name: Test doc-tests
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --doc --all-features
-
-      - name: cargo doc --lib
-        uses: actions-rs/cargo@v1
-        with:
-          command: doc
-          args: --lib --no-deps --all-features
-
-      - name: cargo doc --document-private-items
-        uses: actions-rs/cargo@v1
-        with:
-          command: doc
-          args: --document-private-items --no-deps --all-features
-
-      - name: Test
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --all-features
-
-      - name: Cranky
-        uses: actions-rs/cargo@v1
-        with:
-          command: cranky
-          args: --all-targets --all-features -- -D warnings
-
-  # ---------------------------------------------------------------------------
-
-  check_wasm:
-    name: Check wasm32 + wasm-bindgen
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: 1.65.0
-          target: wasm32-unknown-unknown
-          override: true
-
-      - run: sudo apt-get update && sudo apt-get install libgtk-3-dev
-
-      - name: Set up cargo cache
-        uses: Swatinem/rust-cache@v2
-
-      - name: Install cargo-cranky
-        uses: baptiste0928/cargo-install@v1
-        with:
-          crate: cargo-cranky
-
-      - name: Check wasm32 egui_demo_app
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
-          args: -p egui_demo_app --lib --target wasm32-unknown-unknown
-
-      - name: Check wasm32 egui_demo_app --all-features
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
-          args: -p egui_demo_app --lib --target wasm32-unknown-unknown --all-features
-
-      - name: Check wasm32 eframe
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
-          args: -p eframe --lib --no-default-features --features glow,persistence --target wasm32-unknown-unknown
-
-      - name: wasm-bindgen
-        uses: jetli/wasm-bindgen-action@v0.1.0
-        with:
-          version: "0.2.86"
-
-      - run: ./scripts/wasm_bindgen_check.sh --skip-setup
-
-      - name: Cranky wasm32
-        run: ./scripts/clippy_wasm.sh
-
-  # ---------------------------------------------------------------------------
-
-  cargo-deny:
+  tests:
+    name: Tests
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - target: aarch64-apple-darwin
-          # - target: aarch64-linux-android
-          - target: i686-pc-windows-gnu
-          - target: i686-pc-windows-msvc
-          # - target: i686-unknown-linux-gnu
-          - target: wasm32-unknown-unknown
-          - target: x86_64-apple-darwin
-          - target: x86_64-pc-windows-gnu
-          - target: x86_64-pc-windows-msvc
-          # - target: x86_64-unknown-linux-gnu
-          - target: x86_64-unknown-linux-musl
-          - target: x86_64-unknown-redox
+        rust_version: [1.65.0, stable, nightly]
+        platform:
+          - { target: x86_64-pc-windows-msvc, os: windows-latest }
+          - { target: i686-pc-windows-msvc, os: windows-latest }
+          - {
+              target: i686-pc-windows-msvc,
+              os: windows-latest,
+              options: --no-default-features,
+              features: wgl,
+            }
+          - {
+              target: i686-pc-windows-msvc,
+              os: windows-latest,
+              options: --no-default-features,
+              features: egl,
+            }
+          - {
+              target: x86_64-pc-windows-gnu,
+              os: windows-latest,
+              host: -x86_64-pc-windows-gnu,
+            }
+          - {
+              target: i686-pc-windows-gnu,
+              os: windows-latest,
+              host: -i686-pc-windows-gnu,
+            }
+          # - { target: i686-unknown-linux-gnu,   os: ubuntu-latest,   }
+          - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest }
+          # - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest, options: --no-default-features, features: "egl,wayland,x11" }
+          # - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest, options: --no-default-features, features: "egl,wayland" }
+          - {
+              target: x86_64-unknown-linux-gnu,
+              os: ubuntu-latest,
+              options: --no-default-features,
+              features: "egl,x11",
+            }
+          # - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest, options: --no-default-features, features: glx }
+          # - { target: aarch64-linux-android,    os: ubuntu-latest, cmd: 'apk --'   }
+          - { target: x86_64-apple-darwin, os: macos-latest }
+          # We don't support ios for now.
+          # - { target: x86_64-apple-ios,         os: macos-latest,    }
+          # - { target: aarch64-apple-ios,        os: macos-latest,    }
 
-    name: cargo-deny ${{ matrix.target }}
-    runs-on: ubuntu-22.04
+    env:
+      RUST_BACKTRACE: 1
+      CARGO_INCREMENTAL: 0
+      RUSTFLAGS: "-C debuginfo=0"
+      OPTIONS: ${{ matrix.platform.options }}
+      CMD: ${{ matrix.platform.cmd }}
+      FEATURES: ${{ format(',{0}', matrix.platform.features ) }}
+      RUSTDOCFLAGS: -D warnings
+
+    runs-on: ${{ matrix.platform.os }}
     steps:
-      - uses: actions/checkout@v2
-      - uses: EmbarkStudios/cargo-deny-action@v1
+      - uses: actions/checkout@v1
+      # Used to cache cargo-web
+      - name: Cache cargo folder
+        uses: actions/cache@v1
         with:
-          rust-version: "1.65.0"
-          log-level: error
-          command: check
-          arguments: ${{ matrix.flags }} --target  ${{ matrix.target }}
+          path: ~/.cargo
+          key: ${{ matrix.platform.target }}-cargo-${{ matrix.rust_version }}
 
-  # ---------------------------------------------------------------------------
-  # Android won't work, don't even try
-  # android:
-  #   name: android
-  #   runs-on: ubuntu-22.04
-  #   steps:
-  #     - uses: actions/checkout@v2
-
-  #     - uses: actions-rs/toolchain@v1
-  #       with:
-  #         profile: minimal
-  #         toolchain: 1.65.0
-  #         target: aarch64-linux-android
-  #         override: true
-
-  #     - name: Set up cargo cache
-  #       uses: Swatinem/rust-cache@v2
-
-  #     - run: cargo check --features wgpu,android-native-activity --target aarch64-linux-android
-  #       working-directory: crates/eframe
-
-  # ---------------------------------------------------------------------------
-
-  windows:
-    name: Check Windows
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: hecrj/setup-rust-action@v1
         with:
-          profile: minimal
-          toolchain: 1.65.0
-          override: true
+          rust-version: ${{ matrix.rust_version }}${{ matrix.platform.host }}
+          targets: ${{ matrix.platform.target }}
+          components: clippy
 
-      - name: Set up cargo cache
-        uses: Swatinem/rust-cache@v2
+        # We need those for examples.
+      - name: Install GCC Multilib
+        if: (matrix.platform.os == 'ubuntu-latest') && contains(matrix.platform.target, 'i686')
+        run: sudo apt-get update && sudo apt-get install gcc-multilib
 
-      - name: Check
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
-          args: --all-targets --all-features
+      - name: Install Gtk (ubuntu only)
+        if: matrix.platform.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev
+
+      - name: Install cargo-apk
+        if: contains(matrix.platform.target, 'android')
+        run: cargo +stable install cargo-apk
+
+      - name: Build tests
+        shell: bash
+        run: cd egui && cargo $CMD test -p egui --no-run --verbose --target ${{ matrix.platform.target }} $OPTIONS --features $FEATURES
+      - name: Run tests
+        shell: bash
+        if: (
+          !contains(matrix.platform.target, 'android') &&
+          !contains(matrix.platform.target, 'ios') &&
+          !contains(matrix.platform.target, 'wasm32'))
+        run: cargo test --verbose --target ${{ matrix.platform.target }} $OPTIONS --features $FEATURES
+
+      - name: Check documentation
+        shell: bash
+        run: cd egui && cargo doc --no-deps --target ${{ matrix.platform.target }} $OPTIONS --features $FEATURES --document-private-items
+
+      - name: Lint with clippy
+        shell: bash
+        if: (matrix.rust_version == '1.65.0') && !contains(matrix.platform.options, '--no-default-features')
+        run: cargo clippy --workspace --all-targets --target ${{ matrix.platform.target }} $OPTIONS --features $FEATURES -- -Dwarnings
