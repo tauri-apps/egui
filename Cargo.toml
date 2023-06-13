@@ -1,16 +1,10 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/ecolor",
+    "crates/eframe",
     "crates/egui_demo_app",
-    "crates/egui_demo_lib",
-    "crates/egui_extras",
     "crates/egui_glow",
-    "crates/egui-wgpu",
     "crates/egui-winit",
-    "crates/egui",
-    "crates/emath",
-    "crates/epaint",
 
     "examples/*",
 ]
