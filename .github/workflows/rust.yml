@@ -101,7 +101,9 @@ jobs:
 
       - name: Build tests
         shell: bash
-        run: cargo $CMD test -p --no-run --verbose --target ${{ matrix.platform.target }} $OPTIONS --features $FEATURES
+        run: cargo $CMD test -p eframe_tao --no-run --verbose --target ${{ matrix.platform.target }} $OPTIONS --features $FEATURES
+        run: cargo $CMD test -p egui_glow_tao --no-run --verbose --target ${{ matrix.platform.target }} $OPTIONS --features $FEATURES
+        run: cargo $CMD test -p egui-tao --no-run --verbose --target ${{ matrix.platform.target }} $OPTIONS --features $FEATURES
       - name: Run tests
         shell: bash
         if: (
