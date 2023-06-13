@@ -103,7 +103,7 @@ jobs:
 
       - name: Check documentation
         shell: bash
-        run: cd egui && cargo doc --no-deps --target ${{ matrix.platform.target }} $OPTIONS --features $FEATURES --document-private-items
+        run: cargo doc --no-deps --target ${{ matrix.platform.target }} $OPTIONS --features $FEATURES --document-private-items
 
       - name: Lint with clippy
         shell: bash
