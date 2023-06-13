@@ -33,7 +33,7 @@ chrono = { version = "0.4", default-features = false, features = [
   "js-sys",
   "wasmbind",
 ] }
-eframe = { version = "0.22.0", path = "../eframe", default-features = false }
+eframe = { package = "eframe_tao", version = "0.22.0", path = "../eframe", default-features = false }
 egui = { version = "0.22.0", features = [
   "extra_debug_asserts",
 ] }

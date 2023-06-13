@@ -600,7 +600,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "eframe"
+name = "eframe_tao"
 version = "0.22.0"
 dependencies = [
  "bytemuck",
@@ -609,7 +609,7 @@ dependencies = [
  "document-features",
  "egui",
  "egui-tao",
- "egui_glow",
+ "egui_glow_tao",
  "glow",
  "glutin",
  "glutin_tao",
@@ -670,7 +670,7 @@ version = "0.22.0"
 dependencies = [
  "bytemuck",
  "chrono",
- "eframe",
+ "eframe_tao",
  "egui",
  "egui_demo_lib",
  "egui_extras",
@@ -714,7 +714,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "egui_glow"
+name = "egui_glow_tao"
 version = "0.22.0"
 dependencies = [
  "bytemuck",

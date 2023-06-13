@@ -1,5 +1,5 @@
 [package]
-name = "eframe"
+name = "eframe_tao"
 version = "0.22.0"
 authors = ["Emil Ernerfeldt <emil.ernerfeldt@gmail.com>"]
 description = "egui framework - write GUI apps that compiles to web and/or natively"
@@ -83,7 +83,7 @@ thiserror.workspace = true
 ## Enable this when generating docs.
 document-features = { version = "0.2", optional = true }
 
-egui_glow = { version = "0.22.0", path = "../egui_glow", optional = true, default-features = false }
+egui_glow = { package = "egui_glow_tao", version = "0.22.0", path = "../egui_glow", optional = true, default-features = false }
 glow = { version = "0.12", optional = true }
 ron = { version = "0.8", optional = true, features = ["integer128"] }
 serde = { version = "1", optional = true, features = ["derive"] }
