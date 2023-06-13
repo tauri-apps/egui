@@ -80,6 +80,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev
 
+      - name: Install Core (windows only)
+        if: matrix.platform.os == 'windows-latest'
+        run: rustup target add ${{ matrix.platform.target }}
+
       - name: Install cargo-apk
         if: contains(matrix.platform.target, 'android')
         run: cargo +stable install cargo-apk
