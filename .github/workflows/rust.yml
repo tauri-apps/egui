@@ -25,17 +25,9 @@ jobs:
               os: windows-latest,
               host: -x86_64-pc-windows-gnu,
             }
-          # - { target: i686-unknown-linux-gnu,   os: ubuntu-latest,   }
+          # - { target: i686-unknown-linux-gnu,   os: ubuntu-latest }
           - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest }
-          # - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest, options: --no-default-features, features: "egl,wayland,x11" }
-          # - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest, options: --no-default-features, features: "egl,wayland" }
-          - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest }
-          # - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest, options: --no-default-features, features: glx }
-          # - { target: aarch64-linux-android,    os: ubuntu-latest, cmd: 'apk --'   }
           - { target: x86_64-apple-darwin, os: macos-latest }
-          # We don't support ios for now.
-          # - { target: x86_64-apple-ios,         os: macos-latest,    }
-          # - { target: aarch64-apple-ios,        os: macos-latest,    }
 
     env:
       RUST_BACKTRACE: 1
