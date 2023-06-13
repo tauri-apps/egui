@@ -12,9 +12,9 @@
 egui = "0.22.0"
 ```
 
-This repository provides binding for egui to use tao instead. Currently only `glow` is supported.
+This repository provides binding for egui to use tao instead. Currently only `glow` backend is supported.
 
-For more information on how to use egui, please check out [egui repository](https://github.com/emilk/egui) for both simple examples and detailed document.
+For more information on how to use egui, please check out [egui repository](https://github.com/emilk/egui) for both [simple examples](https://github.com/emilk/egui/tree/master/examples) and [detailed documents](https://docs.rs/egui).
 
 ## Who is egui for?
 
