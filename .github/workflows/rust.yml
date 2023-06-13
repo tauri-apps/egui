@@ -99,10 +99,14 @@ jobs:
         if: contains(matrix.platform.target, 'android')
         run: cargo +stable install cargo-apk
 
-      - name: Build tests
+      - name: Build tests (eframe_tao)
         shell: bash
         run: cargo $CMD test -p eframe_tao --no-run --verbose --target ${{ matrix.platform.target }} $OPTIONS --features $FEATURES
+      - name: Build tests (egui_glow_tao)
+        shell: bash
         run: cargo $CMD test -p egui_glow_tao --no-run --verbose --target ${{ matrix.platform.target }} $OPTIONS --features $FEATURES
+      - name: Build tests (egui-tao)
+        shell: bash
         run: cargo $CMD test -p egui-tao --no-run --verbose --target ${{ matrix.platform.target }} $OPTIONS --features $FEATURES
       - name: Run tests
         shell: bash
