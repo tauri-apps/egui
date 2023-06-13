@@ -1,4 +1,4 @@
-//! Note that this file contains two similar paths - one for [`glow`], one for [`wgpu`].
+//! Note that this file contains two similar paths - one for [`glow`], one for [wgpu].
 //! When making changes to one you often also want to apply it to the other.
 
 use std::time::Instant;
