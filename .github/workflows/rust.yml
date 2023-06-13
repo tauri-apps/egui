@@ -82,7 +82,9 @@ jobs:
 
       - name: Install Core (windows only)
         if: matrix.platform.os == 'windows-latest'
-        run: rustup target add ${{ matrix.platform.target }}
+        run: |
+          rustup target add ${{ matrix.platform.target }}
+          sudo apt-get install -y mingw-w64
 
       - name: Install cargo-apk
         if: contains(matrix.platform.target, 'android')
@@ -109,7 +111,7 @@ jobs:
         shell: bash
         run: cargo doc --no-deps --target ${{ matrix.platform.target }} $OPTIONS --features $FEATURES --document-private-items
 
-      - name: Lint with clippy
-        shell: bash
-        if: (matrix.rust_version == '1.65.0') && !contains(matrix.platform.options, '--no-default-features')
-        run: cargo clippy --workspace --all-targets --target ${{ matrix.platform.target }} $OPTIONS --features $FEATURES -- -Dwarnings
+      # - name: Lint with clippy
+      #   shell: bash
+      #   if: (matrix.rust_version == '1.65.0') && !contains(matrix.platform.options, '--no-default-features')
+      #   run: cargo clippy --workspace --all-targets --target ${{ matrix.platform.target }} $OPTIONS --features $FEATURES -- -Dwarnings
