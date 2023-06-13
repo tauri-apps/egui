@@ -410,16 +410,16 @@ pub struct NativeOptions {
     ///
     /// # Example
     /// ``` no_run
-    /// fn main() -> eframe::Result<()> {
+    /// fn main() -> eframe_tao::Result<()> {
     ///
-    ///     let mut options = eframe::NativeOptions::default();
+    ///     let mut options = eframe_tao::NativeOptions::default();
     ///     // Set the application ID for Wayland only on Linux
     ///     #[cfg(target_os = "linux")]
     ///     {
     ///         options.app_id = Some("egui-example".to_string());
     ///     }
     ///
-    ///     eframe::run_simple_native("My egui App", options, move |ctx, _frame| {
+    ///     eframe_tao::run_simple_native("My egui App", options, move |ctx, _frame| {
     ///         egui::CentralPanel::default().show(ctx, |ui| {
     ///             ui.heading("My egui Application");
     ///         });
@@ -741,15 +741,15 @@ impl Frame {
     /// ```
     /// struct MyApp;
     ///
-    /// impl eframe::App for MyApp {
-    ///     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    /// impl eframe_tao::App for MyApp {
+    ///     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe_tao::Frame) {
     ///         // In real code the app would render something here
     ///         frame.request_screenshot();
     ///         // Things that are added to the frame after the call to
     ///         // request_screenshot() will still be included.
     ///     }
     ///
-    ///     fn post_rendering(&mut self, _window_size: [u32; 2], frame: &eframe::Frame) {
+    ///     fn post_rendering(&mut self, _window_size: [u32; 2], frame: &eframe_tao::Frame) {
     ///         if let Some(screenshot) = frame.screenshot() {
     ///             let pixels_per_point = frame.info().native_pixels_per_point;
     ///             let region = egui::Rect::from_two_pos(
@@ -815,7 +815,7 @@ impl Frame {
     #[doc(alias = "exit")]
     #[doc(alias = "quit")]
     pub fn close(&mut self) {
-        log::debug!("eframe::Frame::close called");
+        log::debug!("eframe_tao::Frame::close called");
         self.output.close = true;
     }
 

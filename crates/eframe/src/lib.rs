@@ -7,22 +7,22 @@
 //! To learn how to set up `eframe` for web and native, go to <https://github.com/emilk/eframe_template/> and follow the instructions there!
 //!
 //! In short, you implement [`App`] (especially [`App::update`]) and then
-//! call [`crate::run_native`] from your `main.rs`, and/or call `eframe::start_web` from your `lib.rs`.
+//! call [`crate::run_native`] from your `main.rs`, and/or call `eframe_tao::start_web` from your `lib.rs`.
 //!
 //! ## Usage, native:
 //! ``` no_run
-//! use eframe::egui;
+//! use eframe_tao::egui;
 //!
 //! fn main() {
-//!     let native_options = eframe::NativeOptions::default();
-//!     eframe::run_native("My egui App", native_options, Box::new(|cc| Box::new(MyEguiApp::new(cc))));
+//!     let native_options = eframe_tao::NativeOptions::default();
+//!     eframe_tao::run_native("My egui App", native_options, Box::new(|cc| Box::new(MyEguiApp::new(cc))));
 //! }
 //!
 //! #[derive(Default)]
 //! struct MyEguiApp {}
 //!
 //! impl MyEguiApp {
-//!     fn new(cc: &eframe::CreationContext<'_>) -> Self {
+//!     fn new(cc: &eframe_tao::CreationContext<'_>) -> Self {
 //!         // Customize egui here with cc.egui_ctx.set_fonts and cc.egui_ctx.set_visuals.
 //!         // Restore app state using cc.storage (requires the "persistence" feature).
 //!         // Use the cc.gl (a glow::Context) to create graphics shaders and buffers that you can use
@@ -31,8 +31,8 @@
 //!     }
 //! }
 //!
-//! impl eframe::App for MyEguiApp {
-//!    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+//! impl eframe_tao::App for MyEguiApp {
+//!    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe_tao::Frame) {
 //!        egui::CentralPanel::default().show(ctx, |ui| {
 //!            ui.heading("Hello World!");
 //!        });
@@ -61,7 +61,7 @@
 //!     #[wasm_bindgen(constructor)]
 //!     pub fn new() -> Self {
 //!         // Redirect [`log`] message to `console.log` and friends:
-//!         eframe::WebLogger::init(log::LevelFilter::Debug).ok();
+//!         eframe_tao::WebLogger::init(log::LevelFilter::Debug).ok();
 //!
 //!         Self {
 //!             runner: WebRunner::new(),
@@ -74,7 +74,7 @@
 //!         self.runner
 //!             .start(
 //!                 canvas_id,
-//!                 eframe::WebOptions::default(),
+//!                 eframe_tao::WebOptions::default(),
 //!                 Box::new(|cc| Box::new(MyEguiApp::new(cc))),
 //!             )
 //!             .await
@@ -166,18 +166,18 @@ mod native;
 ///
 /// Call from `fn main` like this:
 /// ``` no_run
-/// use eframe::egui;
+/// use eframe_tao::egui;
 ///
-/// fn main() -> eframe::Result<()> {
-///     let native_options = eframe::NativeOptions::default();
-///     eframe::run_native("MyApp", native_options, Box::new(|cc| Box::new(MyEguiApp::new(cc))))
+/// fn main() -> eframe_tao::Result<()> {
+///     let native_options = eframe_tao::NativeOptions::default();
+///     eframe_tao::run_native("MyApp", native_options, Box::new(|cc| Box::new(MyEguiApp::new(cc))))
 /// }
 ///
 /// #[derive(Default)]
 /// struct MyEguiApp {}
 ///
 /// impl MyEguiApp {
-///     fn new(cc: &eframe::CreationContext<'_>) -> Self {
+///     fn new(cc: &eframe_tao::CreationContext<'_>) -> Self {
 ///         // Customize egui here with cc.egui_ctx.set_fonts and cc.egui_ctx.set_visuals.
 ///         // Restore app state using cc.storage (requires the "persistence" feature).
 ///         // Use the cc.gl (a glow::Context) to create graphics shaders and buffers that you can use
@@ -186,8 +186,8 @@ mod native;
 ///     }
 /// }
 ///
-/// impl eframe::App for MyEguiApp {
-///    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+/// impl eframe_tao::App for MyEguiApp {
+///    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe_tao::Frame) {
 ///        egui::CentralPanel::default().show(ctx, |ui| {
 ///            ui.heading("Hello World!");
 ///        });
@@ -236,13 +236,13 @@ pub fn run_native(
 ///
 /// # Example
 /// ``` no_run
-/// fn main() -> eframe::Result<()> {
+/// fn main() -> eframe_tao::Result<()> {
 ///     // Our application state:
 ///     let mut name = "Arthur".to_owned();
 ///     let mut age = 42;
 ///
-///     let options = eframe::NativeOptions::default();
-///     eframe::run_simple_native("My egui App", options, move |ctx, _frame| {
+///     let options = eframe_tao::NativeOptions::default();
+///     eframe_tao::run_simple_native("My egui App", options, move |ctx, _frame| {
 ///         egui::CentralPanel::default().show(ctx, |ui| {
 ///             ui.heading("My egui Application");
 ///             ui.horizontal(|ui| {

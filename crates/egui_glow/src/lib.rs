@@ -31,7 +31,7 @@ pub use winit::*;
 ///
 /// ``` no_run
 /// # let glow_context = todo!();
-/// use egui_glow::check_for_gl_error;
+/// use egui_glow_tao::check_for_gl_error;
 /// check_for_gl_error!(glow_context);
 /// check_for_gl_error!(glow_context, "during painting");
 /// ```
@@ -55,7 +55,7 @@ macro_rules! check_for_gl_error {
 ///
 /// ``` no_run
 /// # let glow_context = todo!();
-/// use egui_glow::check_for_gl_error_even_in_release;
+/// use egui_glow_tao::check_for_gl_error_even_in_release;
 /// check_for_gl_error_even_in_release!(glow_context);
 /// check_for_gl_error_even_in_release!(glow_context, "during painting");
 /// ```
