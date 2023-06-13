@@ -5,8 +5,6 @@ members = [
     "crates/egui_demo_app",
     "crates/egui_glow",
     "crates/egui-winit",
-
-    "examples/*",
 ]
 
 [profile.release]

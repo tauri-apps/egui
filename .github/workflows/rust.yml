@@ -197,25 +197,25 @@ jobs:
           arguments: ${{ matrix.flags }} --target  ${{ matrix.target }}
 
   # ---------------------------------------------------------------------------
+  # Android won't work, don't even try
+  # android:
+  #   name: android
+  #   runs-on: ubuntu-22.04
+  #   steps:
+  #     - uses: actions/checkout@v2
 
-  android:
-    name: android
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v2
+  #     - uses: actions-rs/toolchain@v1
+  #       with:
+  #         profile: minimal
+  #         toolchain: 1.65.0
+  #         target: aarch64-linux-android
+  #         override: true
 
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: 1.65.0
-          target: aarch64-linux-android
-          override: true
+  #     - name: Set up cargo cache
+  #       uses: Swatinem/rust-cache@v2
 
-      - name: Set up cargo cache
-        uses: Swatinem/rust-cache@v2
-
-      - run: cargo check --features wgpu,android-native-activity --target aarch64-linux-android
-        working-directory: crates/eframe
+  #     - run: cargo check --features wgpu,android-native-activity --target aarch64-linux-android
+  #       working-directory: crates/eframe
 
   # ---------------------------------------------------------------------------
 

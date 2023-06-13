@@ -25,7 +25,7 @@ serde = ["dep:serde", "egui_demo_lib/serde", "egui/serde"]
 syntax_highlighting = ["egui_demo_lib/syntax_highlighting"]
 
 glow = ["eframe/glow"]
-wgpu = ["eframe/wgpu", "bytemuck"]
+## wgpu = ["eframe/wgpu", "bytemuck"]
 
 
 [dependencies]
