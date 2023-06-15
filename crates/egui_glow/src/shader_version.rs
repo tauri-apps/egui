@@ -2,22 +2,29 @@
 
 use std::convert::TryInto;
 
+/// Helper for parsing and interpreting the OpenGL shader version.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[allow(dead_code)]
-pub(crate) enum ShaderVersion {
+pub enum ShaderVersion {
     Gl120,
+
+    /// OpenGL 1.4 or later
     Gl140,
+
+    /// e.g. WebGL1
     Es100,
+
+    /// e.g. WebGL2
     Es300,
 }
 
 impl ShaderVersion {
-    pub(crate) fn get(gl: &glow::Context) -> Self {
+    pub fn get(gl: &glow::Context) -> Self {
         use glow::HasContext as _;
         let shading_lang_string =
             unsafe { gl.get_parameter_string(glow::SHADING_LANGUAGE_VERSION) };
         let shader_version = Self::parse(&shading_lang_string);
-        tracing::debug!(
+        log::debug!(
             "Shader version: {:?} ({:?}).",
             shader_version,
             shading_lang_string
@@ -52,7 +59,8 @@ impl ShaderVersion {
         }
     }
 
-    pub(crate) fn version(&self) -> &'static str {
+    /// Goes on top of the shader.
+    pub fn version_declaration(&self) -> &'static str {
         match self {
             Self::Gl120 => "#version 120\n",
             Self::Gl140 => "#version 140\n",
@@ -61,10 +69,18 @@ impl ShaderVersion {
         }
     }
 
-    pub(crate) fn is_new_shader_interface(&self) -> &'static str {
+    /// If true, use `in/out`. If `false`, use `varying` and `gl_FragColor`.
+    pub fn is_new_shader_interface(&self) -> bool {
         match self {
-            ShaderVersion::Es300 | ShaderVersion::Gl140 => "#define NEW_SHADER_INTERFACE\n",
-            _ => "",
+            Self::Gl120 | Self::Es100 => false,
+            Self::Es300 | Self::Gl140 => true,
+        }
+    }
+
+    pub fn is_embedded(&self) -> bool {
+        match self {
+            Self::Gl120 | Self::Gl140 => false,
+            Self::Es100 | Self::Es300 => true,
         }
     }
 }

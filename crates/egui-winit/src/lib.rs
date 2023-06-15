@@ -9,18 +9,19 @@
 
 #![allow(clippy::manual_range_contains)]
 
-use std::os::raw::c_void;
-
+#[cfg(feature = "accesskit")]
+pub use accesskit_winit;
 pub use egui;
+#[cfg(feature = "accesskit")]
+use egui::accesskit;
 pub use winit;
 
 pub mod clipboard;
-pub mod screen_reader;
 mod window_settings;
 
 pub use window_settings::WindowSettings;
 
-use winit::event_loop::EventLoopWindowTarget;
+use raw_window_handle::HasRawDisplayHandle;
 
 pub fn native_pixels_per_point(window: &winit::window::Window) -> f32 {
     window.scale_factor() as f32
@@ -31,18 +32,37 @@ pub fn screen_size_in_pixels(window: &winit::window::Window) -> egui::Vec2 {
     egui::vec2(size.width as f32, size.height as f32)
 }
 
+// ----------------------------------------------------------------------------
+
+#[must_use]
+pub struct EventResponse {
+    /// If true, egui consumed this event, i.e. wants exclusive use of this event
+    /// (e.g. a mouse click on an egui window, or entering text into a text field).
+    ///
+    /// For instance, if you use egui for a game, you should only
+    /// pass on the events to your game when [`Self::consumed`] is `false.
+    ///
+    /// Note that egui uses `tab` to move focus between elements, so this will always be `true` for tabs.
+    pub consumed: bool,
+
+    /// Do we need an egui refresh because of this event?
+    pub repaint: bool,
+}
+
+// ----------------------------------------------------------------------------
+
 /// Handles the integration between egui and winit.
 pub struct State {
     start_time: instant::Instant,
     egui_input: egui::RawInput,
     pointer_pos_in_points: Option<egui::Pos2>,
     any_pointer_button_down: bool,
-    current_cursor_icon: egui::CursorIcon,
+    current_cursor_icon: Option<egui::CursorIcon>,
+
     /// What egui uses.
     current_pixels_per_point: f32,
 
     clipboard: clipboard::Clipboard,
-    screen_reader: screen_reader::ScreenReader,
 
     /// If `true`, mouse inputs will be treated as touches.
     /// Useful for debugging touch support in egui.
@@ -54,16 +74,23 @@ pub struct State {
     ///
     /// Only one touch will be interpreted as pointer at any time.
     pointer_touch_id: Option<u64>,
+
+    /// track ime state
+    input_method_editor_started: bool,
+
+    #[cfg(feature = "accesskit")]
+    accesskit: Option<accesskit_winit::Adapter>,
 }
 
 impl State {
-    pub fn new<T>(event_loop: &EventLoopWindowTarget<T>) -> Self {
-        Self::new_with_wayland_display(wayland_display(event_loop))
-    }
-
-    pub fn new_with_wayland_display(wayland_display: Option<*mut c_void>) -> Self {
+    /// Construct a new instance
+    ///
+    /// # Safety
+    ///
+    /// The returned `State` must not outlive the input `display_target`.
+    pub fn new(display_target: &dyn HasRawDisplayHandle) -> Self {
         let egui_input = egui::RawInput {
-            has_focus: false, // winit will tell us when we have focus
+            focused: false, // winit will tell us when we have focus
             ..Default::default()
         };
 
@@ -72,16 +99,34 @@ impl State {
             egui_input,
             pointer_pos_in_points: None,
             any_pointer_button_down: false,
-            current_cursor_icon: egui::CursorIcon::Default,
+            current_cursor_icon: None,
             current_pixels_per_point: 1.0,
 
-            clipboard: clipboard::Clipboard::new(wayland_display),
-            screen_reader: screen_reader::ScreenReader::default(),
+            clipboard: clipboard::Clipboard::new(display_target),
 
             simulate_touch_screen: false,
             pointer_touch_id: None,
+
+            input_method_editor_started: false,
+
+            #[cfg(feature = "accesskit")]
+            accesskit: None,
         }
     }
+
+    // #[cfg(feature = "accesskit")]
+    // pub fn init_accesskit<T: From<accesskit_winit::ActionRequestEvent> + Send>(
+    //     &mut self,
+    //     window: &winit::window::Window,
+    //     event_loop_proxy: winit::event_loop::EventLoopProxy<T>,
+    //     initial_tree_update_factory: impl 'static + FnOnce() -> accesskit::TreeUpdate + Send,
+    // ) {
+    //     self.accesskit = Some(accesskit_winit::Adapter::new(
+    //         window,
+    //         initial_tree_update_factory,
+    //         event_loop_proxy,
+    //     ));
+    // }
 
     /// Call this once a graphics context has been created to update the maximum texture dimensions
     /// that egui will use.
@@ -144,52 +189,64 @@ impl State {
     /// Call this when there is a new event.
     ///
     /// The result can be found in [`Self::egui_input`] and be extracted with [`Self::take_egui_input`].
-    ///
-    /// Returns `true` if egui wants exclusive use of this event
-    /// (e.g. a mouse click on an egui window, or entering text into a text field).
-    /// For instance, if you use egui for a game, you want to first call this
-    /// and only when this returns `false` pass on the events to your game.
-    ///
-    /// Note that egui uses `tab` to move focus between elements, so this will always return `true` for tabs.
     pub fn on_event(
         &mut self,
         egui_ctx: &egui::Context,
         event: &winit::event::WindowEvent<'_>,
-    ) -> bool {
+    ) -> EventResponse {
         use winit::event::WindowEvent;
         match event {
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 let pixels_per_point = *scale_factor as f32;
                 self.egui_input.pixels_per_point = Some(pixels_per_point);
                 self.current_pixels_per_point = pixels_per_point;
-                false
+                EventResponse {
+                    repaint: true,
+                    consumed: false,
+                }
             }
             WindowEvent::MouseInput { state, button, .. } => {
                 self.on_mouse_button_input(*state, *button);
-                egui_ctx.wants_pointer_input()
+                EventResponse {
+                    repaint: true,
+                    consumed: egui_ctx.wants_pointer_input(),
+                }
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 self.on_mouse_wheel(*delta);
-                egui_ctx.wants_pointer_input()
+                EventResponse {
+                    repaint: true,
+                    consumed: egui_ctx.wants_pointer_input(),
+                }
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.on_cursor_moved(*position);
-                egui_ctx.is_using_pointer()
+                EventResponse {
+                    repaint: true,
+                    consumed: egui_ctx.is_using_pointer(),
+                }
             }
             WindowEvent::CursorLeft { .. } => {
                 self.pointer_pos_in_points = None;
                 self.egui_input.events.push(egui::Event::PointerGone);
-                false
+                EventResponse {
+                    repaint: true,
+                    consumed: false,
+                }
             }
             // WindowEvent::TouchpadPressure {device_id, pressure, stage, ..  } => {} // TODO
             WindowEvent::Touch(touch) => {
                 self.on_touch(touch);
-                match touch.phase {
+                let consumed = match touch.phase {
                     winit::event::TouchPhase::Started
                     | winit::event::TouchPhase::Ended
                     | winit::event::TouchPhase::Cancelled => egui_ctx.wants_pointer_input(),
                     winit::event::TouchPhase::Moved => egui_ctx.is_using_pointer(),
-                    _ => unreachable!(),
+                    _ => unreachable!()
+                };
+                EventResponse {
+                    repaint: true,
+                    consumed,
                 }
             }
             WindowEvent::ReceivedImeText(ch) => {
@@ -198,37 +255,57 @@ impl State {
                 let is_mac_cmd = cfg!(target_os = "macos")
                     && (self.egui_input.modifiers.ctrl || self.egui_input.modifiers.mac_cmd);
 
-                if ch.chars().all(is_printable_char) && !is_mac_cmd {
+                let consumed = if ch.chars().all(is_printable_char) && !is_mac_cmd {
                     self.egui_input
                         .events
                         .push(egui::Event::Text(ch.to_string()));
                     egui_ctx.wants_keyboard_input()
                 } else {
                     false
+                };
+                EventResponse {
+                    repaint: true,
+                    consumed,
                 }
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 self.on_keyboard_input(event);
-                egui_ctx.wants_keyboard_input()
-                    || event.physical_key == winit::keyboard::KeyCode::Tab
+                let consumed = egui_ctx.wants_keyboard_input()
+                    || event.physical_key == winit::keyboard::KeyCode::Tab;
+                EventResponse {
+                    repaint: true,
+                    consumed,
+                }
             }
-            WindowEvent::Focused(has_focus) => {
-                self.egui_input.has_focus = *has_focus;
+            WindowEvent::Focused(focused) => {
+                self.egui_input.focused = *focused;
                 // We will not be given a KeyboardInput event when the modifiers are released while
                 // the window does not have focus. Unset all modifier state to be safe.
                 self.egui_input.modifiers = egui::Modifiers::default();
-                false
+                self.egui_input
+                    .events
+                    .push(egui::Event::WindowFocused(*focused));
+                EventResponse {
+                    repaint: true,
+                    consumed: false,
+                }
             }
             WindowEvent::HoveredFile(path) => {
                 self.egui_input.hovered_files.push(egui::HoveredFile {
                     path: Some(path.clone()),
                     ..Default::default()
                 });
-                false
+                EventResponse {
+                    repaint: true,
+                    consumed: false,
+                }
             }
             WindowEvent::HoveredFileCancelled => {
                 self.egui_input.hovered_files.clear();
-                false
+                EventResponse {
+                    repaint: true,
+                    consumed: false,
+                }
             }
             WindowEvent::DroppedFile(path) => {
                 self.egui_input.hovered_files.clear();
@@ -236,7 +313,10 @@ impl State {
                     path: Some(path.clone()),
                     ..Default::default()
                 });
-                false
+                EventResponse {
+                    repaint: true,
+                    consumed: false,
+                }
             }
             WindowEvent::ModifiersChanged(state) => {
                 self.egui_input.modifiers.alt = state.alt_key();
@@ -248,13 +328,62 @@ impl State {
                 } else {
                     state.control_key()
                 };
-                false
+                EventResponse {
+                    repaint: true,
+                    consumed: false,
+                }
             }
-            _ => {
-                // dbg!(event);
-                false
-            }
+
+            // Things that may require repaint:
+            WindowEvent::CloseRequested
+            | WindowEvent::CursorEntered { .. }
+            | WindowEvent::Destroyed
+            // Winit only
+            // | WindowEvent::Occluded(_)
+            | WindowEvent::Resized(_)
+            | WindowEvent::ThemeChanged(_)
+            | WindowEvent::TouchpadPressure { .. }
+            // tao only
+            | WindowEvent::DecorationsClick { .. }
+            => EventResponse {
+                repaint: true,
+                consumed: false,
+            },
+
+            // Things we completely ignore:
+            WindowEvent::AxisMotion { .. }
+            | WindowEvent::Moved(_)
+            // Winit only
+            // | WindowEvent::SmartMagnify { .. }
+            // | WindowEvent::TouchpadRotate { .. }
+            => EventResponse {
+                repaint: false,
+                consumed: false,
+            },
+
+            // Winit only
+            // WindowEvent::TouchpadMagnify { delta, .. } => {
+            //     // Positive delta values indicate magnification (zooming in).
+            //     // Negative delta values indicate shrinking (zooming out).
+            //     let zoom_factor = (*delta as f32).exp();
+            //     self.egui_input.events.push(egui::Event::Zoom(zoom_factor));
+            //     EventResponse {
+            //         repaint: true,
+            //         consumed: egui_ctx.wants_pointer_input(),
+            //     }
+            // }
+            _ => unreachable!()
         }
+    }
+
+    /// Call this when there is a new [`accesskit::ActionRequest`].
+    ///
+    /// The result can be found in [`Self::egui_input`] and be extracted with [`Self::take_egui_input`].
+    #[cfg(feature = "accesskit")]
+    pub fn on_accesskit_action_request(&mut self, request: accesskit::ActionRequest) {
+        self.egui_input
+            .events
+            .push(egui::Event::AccessKitActionRequest(request));
     }
 
     fn on_mouse_button_input(
@@ -357,7 +486,7 @@ impl State {
                 _ => unreachable!(),
             },
         });
-        // If we're not yet tanslating a touch or we're translating this very
+        // If we're not yet translating a touch or we're translating this very
         // touch …
         if self.pointer_touch_id.is_none() || self.pointer_touch_id.unwrap() == touch.id {
             // … emit PointerButton resp. PointerMoved events to emulate mouse
@@ -396,6 +525,27 @@ impl State {
     }
 
     fn on_mouse_wheel(&mut self, delta: winit::event::MouseScrollDelta) {
+        {
+            let (unit, delta) = match delta {
+                winit::event::MouseScrollDelta::LineDelta(x, y) => {
+                    (egui::MouseWheelUnit::Line, egui::vec2(x, y))
+                }
+                winit::event::MouseScrollDelta::PixelDelta(winit::dpi::PhysicalPosition {
+                    x,
+                    y,
+                }) => (
+                    egui::MouseWheelUnit::Point,
+                    egui::vec2(x as f32, y as f32) / self.pixels_per_point(),
+                ),
+                _ => unreachable!(),
+            };
+            let modifiers = self.egui_input.modifiers;
+            self.egui_input.events.push(egui::Event::MouseWheel {
+                unit,
+                delta,
+                modifiers,
+            });
+        }
         let delta = match delta {
             winit::event::MouseScrollDelta::LineDelta(x, y) => {
                 let points_per_scroll_line = 50.0; // Scroll speed decided by consensus: https://github.com/emilk/egui/issues/461
@@ -435,17 +585,19 @@ impl State {
                 self.egui_input.events.push(egui::Event::Copy);
             } else if is_paste_command(self.egui_input.modifiers, keycode) {
                 if let Some(contents) = self.clipboard.get() {
-                    self.egui_input
-                        .events
-                        .push(egui::Event::Paste(contents.replace("\r\n", "\n")));
+                    let contents = contents.replace("\r\n", "\n");
+                    if !contents.is_empty() {
+                        self.egui_input.events.push(egui::Event::Paste(contents));
+                    }
                 }
             }
         }
 
-        if let Some(key) = translate_virtual_key_code(input.physical_key) {
+        if let Some(key) = translate_virtual_key_code(keycode) {
             self.egui_input.events.push(egui::Event::Key {
                 key,
                 pressed,
+                repeat: false, // egui will fill this in for us!
                 modifiers: self.egui_input.modifiers,
             });
         }
@@ -465,11 +617,6 @@ impl State {
         egui_ctx: &egui::Context,
         platform_output: egui::PlatformOutput,
     ) {
-        if egui_ctx.options().screen_reader {
-            self.screen_reader
-                .speak(&platform_output.events_description());
-        }
-
         let egui::PlatformOutput {
             cursor_icon,
             open_url,
@@ -477,6 +624,8 @@ impl State {
             events: _,                    // handled above
             mutable_text_under_cursor: _, // only used in eframe web
             text_cursor_pos,
+            #[cfg(feature = "accesskit")]
+            accesskit_update,
         } = platform_output;
         self.current_pixels_per_point = egui_ctx.pixels_per_point(); // someone can have changed it to scale the UI
 
@@ -493,25 +642,35 @@ impl State {
         if let Some(egui::Pos2 { x, y }) = text_cursor_pos {
             window.set_ime_position(winit::dpi::LogicalPosition { x, y });
         }
+
+        #[cfg(feature = "accesskit")]
+        if let Some(accesskit) = self.accesskit.as_ref() {
+            if let Some(update) = accesskit_update {
+                accesskit.update_if_active(|| update);
+            }
+        }
     }
 
     fn set_cursor_icon(&mut self, window: &winit::window::Window, cursor_icon: egui::CursorIcon) {
-        // prevent flickering near frame boundary when Windows OS tries to control cursor icon for window resizing
-        #[cfg(windows)]
-        if self.current_cursor_icon == cursor_icon {
+        if self.current_cursor_icon == Some(cursor_icon) {
+            // Prevent flickering near frame boundary when Windows OS tries to control cursor icon for window resizing.
+            // On other platforms: just early-out to save CPU.
             return;
         }
-        self.current_cursor_icon = cursor_icon;
 
-        if let Some(cursor_icon) = translate_cursor(cursor_icon) {
-            window.set_cursor_visible(true);
+        let is_pointer_in_window = self.pointer_pos_in_points.is_some();
+        if is_pointer_in_window {
+            self.current_cursor_icon = Some(cursor_icon);
 
-            let is_pointer_in_window = self.pointer_pos_in_points.is_some();
-            if is_pointer_in_window {
-                window.set_cursor_icon(cursor_icon);
+            if let Some(winit_cursor_icon) = translate_cursor(cursor_icon) {
+                window.set_cursor_visible(true);
+                window.set_cursor_icon(winit_cursor_icon);
+            } else {
+                window.set_cursor_visible(false);
             }
         } else {
-            window.set_cursor_visible(false);
+            // Remember to set the cursor again once the cursor returns to the screen:
+            self.current_cursor_icon = None;
         }
     }
 }
@@ -519,12 +678,12 @@ impl State {
 fn open_url_in_browser(_url: &str) {
     #[cfg(feature = "webbrowser")]
     if let Err(err) = webbrowser::open(_url) {
-        tracing::warn!("Failed to open url: {}", err);
+        log::warn!("Failed to open url: {}", err);
     }
 
     #[cfg(not(feature = "webbrowser"))]
     {
-        tracing::warn!("Cannot open url - feature \"links\" not enabled.");
+        log::warn!("Cannot open url - feature \"links\" not enabled.");
     }
 }
 
@@ -595,6 +754,11 @@ fn translate_virtual_key_code(key: winit::keyboard::KeyCode) -> Option<egui::Key
         KeyCode::End => Key::End,
         KeyCode::PageUp => Key::PageUp,
         KeyCode::PageDown => Key::PageDown,
+
+        KeyCode::Minus => Key::Minus,
+        // Using Mac the key with the Plus sign on it is reported as the Equals key
+        // (with both English and Swedish keyboard).
+        KeyCode::Equal => Key::PlusEquals,
 
         KeyCode::Digit0 | KeyCode::Numpad0 => Key::Num0,
         KeyCode::Digit1 | KeyCode::Numpad1 => Key::Num1,
@@ -702,27 +866,6 @@ fn translate_cursor(cursor_icon: egui::CursorIcon) -> Option<winit::window::Curs
         egui::CursorIcon::Wait => Some(winit::window::CursorIcon::Wait),
         egui::CursorIcon::ZoomIn => Some(winit::window::CursorIcon::ZoomIn),
         egui::CursorIcon::ZoomOut => Some(winit::window::CursorIcon::ZoomOut),
-    }
-}
-
-/// Returns a Wayland display handle if the target is running Wayland
-fn wayland_display<T>(_event_loop: &EventLoopWindowTarget<T>) -> Option<*mut c_void> {
-    // TODO add wayland display
-    // #[cfg(any(
-    //     target_os = "linux",
-    //     target_os = "dragonfly",
-    //     target_os = "freebsd",
-    //     target_os = "netbsd",
-    //     target_os = "openbsd"
-    // ))]
-    // {
-    //     return _event_loop.wayland_display();
-    // }
-
-    #[allow(unreachable_code)]
-    {
-        let _ = _event_loop;
-        None
     }
 }
 

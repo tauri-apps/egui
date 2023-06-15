@@ -1,5 +1,7 @@
+use crate::shader_version::ShaderVersion;
 pub use egui_winit;
 use egui_winit::winit;
+pub use egui_winit::EventResponse;
 
 /// Use [`egui`] from a [`glow`] app based on [`winit`].
 pub struct EguiGlow {
@@ -12,13 +14,15 @@ pub struct EguiGlow {
 }
 
 impl EguiGlow {
+    /// For automatic shader version detection set `shader_version` to `None`.
     pub fn new<E>(
         event_loop: &winit::event_loop::EventLoopWindowTarget<E>,
         gl: std::sync::Arc<glow::Context>,
+        shader_version: Option<ShaderVersion>,
     ) -> Self {
-        let painter = crate::Painter::new(gl, None, "")
-            .map_err(|error| {
-                tracing::error!("error occurred in initializing painter:\n{}", error);
+        let painter = crate::Painter::new(gl, "", shader_version)
+            .map_err(|err| {
+                log::error!("error occurred in initializing painter:\n{err}");
             })
             .unwrap();
 
@@ -31,13 +35,7 @@ impl EguiGlow {
         }
     }
 
-    /// Returns `true` if egui wants exclusive use of this event
-    /// (e.g. a mouse click on an egui window, or entering text into a text field).
-    /// For instance, if you use egui for a game, you want to first call this
-    /// and only when this returns `false` pass on the events to your game.
-    ///
-    /// Note that egui uses `tab` to move focus between elements, so this will always return `true` for tabs.
-    pub fn on_event(&mut self, event: &winit::event::WindowEvent<'_>) -> bool {
+    pub fn on_event(&mut self, event: &winit::event::WindowEvent<'_>) -> EventResponse {
         self.egui_winit.on_event(&self.egui_ctx, event)
     }
 

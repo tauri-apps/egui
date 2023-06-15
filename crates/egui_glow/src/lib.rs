@@ -1,6 +1,6 @@
 //! [`egui`] bindings for [`glow`](https://github.com/grovesNL/glow).
 //!
-//! The main types you want to look are are [`Painter`] and [`EguiGlow`].
+//! The main types you want to look are are [`Painter`].
 //!
 //! If you are writing an app, you may want to look at [`eframe`](https://docs.rs/eframe) instead.
 //!
@@ -15,22 +15,23 @@ pub mod painter;
 pub use glow;
 pub use painter::{CallbackFn, Painter};
 mod misc_util;
-mod post_process;
 mod shader_version;
 mod vao;
+
+pub use shader_version::ShaderVersion;
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "winit"))]
 pub mod winit;
 #[cfg(all(not(target_arch = "wasm32"), feature = "winit"))]
 pub use winit::*;
 
-/// Check for OpenGL error and report it using `tracing::error`.
+/// Check for OpenGL error and report it using `log::error`.
 ///
 /// Only active in debug builds!
 ///
 /// ``` no_run
 /// # let glow_context = todo!();
-/// use egui_glow::check_for_gl_error;
+/// use egui_glow_tao::check_for_gl_error;
 /// check_for_gl_error!(glow_context);
 /// check_for_gl_error!(glow_context, "during painting");
 /// ```
@@ -48,13 +49,13 @@ macro_rules! check_for_gl_error {
     }};
 }
 
-/// Check for OpenGL error and report it using `tracing::error`.
+/// Check for OpenGL error and report it using `log::error`.
 ///
 /// WARNING: slow! Only use during setup!
 ///
 /// ``` no_run
 /// # let glow_context = todo!();
-/// use egui_glow::check_for_gl_error_even_in_release;
+/// use egui_glow_tao::check_for_gl_error_even_in_release;
 /// check_for_gl_error_even_in_release!(glow_context);
 /// check_for_gl_error_even_in_release!(glow_context, "during painting");
 /// ```
@@ -89,7 +90,7 @@ pub fn check_for_gl_error_impl(gl: &glow::Context, file: &str, line: u32, contex
         };
 
         if context.is_empty() {
-            tracing::error!(
+            log::error!(
                 "GL error, at {}:{}: {} (0x{:X}). Please file a bug at https://github.com/emilk/egui/issues",
                 file,
                 line,
@@ -97,7 +98,7 @@ pub fn check_for_gl_error_impl(gl: &glow::Context, file: &str, line: u32, contex
                 error_code,
             );
         } else {
-            tracing::error!(
+            log::error!(
                 "GL error, at {}:{} ({}): {} (0x{:X}). Please file a bug at https://github.com/emilk/egui/issues",
                 file,
                 line,
