@@ -49,7 +49,7 @@ __screenshot = [ ]
 egui = { version = "0.22.0", default-features = false, features = [ "bytemuck", "log" ] }
 log = { version = "0.4", features = [ "std" ] }
 document-features = { version = "0.2", optional = true }
-egui_glow = { package = "egui_glow_tao", version = "0.22.0", path = "../egui_glow", optional = true, default-features = false }
+egui_glow = { package = "egui_glow_tao", version = "0.23.0", path = "../egui_glow", optional = true, default-features = false }
 glow = { version = "0.12", optional = true }
 ron = { version = "0.8", optional = true, features = [ "integer128" ] }
 serde = { version = "1", optional = true, features = [ "derive" ] }
@@ -58,7 +58,7 @@ serde = { version = "1", optional = true, features = [ "derive" ] }
   workspace = true
 
 [target."cfg(not(target_arch = \"wasm32\"))".dependencies]
-egui-winit = { package = "egui-tao", version = "0.22.0", path = "../egui-winit", default-features = false, features = [ "clipboard", "links" ] }
+egui-winit = { package = "egui-tao", version = "0.23.0", path = "../egui-winit", default-features = false, features = [ "clipboard", "links" ] }
 image = { version = "0.24", default-features = false, features = [ "png" ] }
 raw-window-handle = { version = "0.5.0" }
 winit = { package = "tao", version = "0.18.0" }
