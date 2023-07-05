@@ -32,7 +32,7 @@ serde = [ "egui/serde", "dep:serde" ]
 [dependencies]
 egui = { version = "0.22.0", default-features = false, features = [ "log" ] }
 log = { version = "0.4", features = [ "std" ] }
-winit = { package = "tao", version = "0.18.0", default-features = false }
+winit = { package = "tao", version = "0.19.0", default-features = false }
 raw-window-handle = "0.5.0"
 document-features = { version = "0.2", optional = true }
 puffin = { version = "0.15", optional = true }
