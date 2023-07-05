@@ -157,7 +157,7 @@ pub use web::{WebLogger, WebRunner};
 
 #[cfg(not(target_arch = "wasm32"))]
 #[cfg(any(feature = "glow", feature = "wgpu"))]
-mod native;
+pub mod native;
 
 /// This is how you start a native (desktop) app.
 ///
